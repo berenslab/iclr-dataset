@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_validate
 
 
 def knn_accuracy(embeddings, true_labels, test_size=0.1, k = 10, rs=42, set_numpy = True, metric="euclidean"):
@@ -44,4 +45,32 @@ def knn_accuracy(embeddings, true_labels, test_size=0.1, k = 10, rs=42, set_nump
         knn_accuracy = knn.score(X_test, y_test)
 
     
+    return knn_accuracy
+
+
+
+def knn_accuracy_cv(
+    embeddings, labels, k=10, set_numpy=True, metric="euclidean"
+):
+    if type(embeddings) == list:
+        knn_accuracy = []
+        for embed in embeddings:
+            clf = KNeighborsClassifier(
+                n_neighbors=k, algorithm="brute", n_jobs=-1, metric=metric
+            )
+            cvresults = cross_validate(clf, embed, labels, cv=10)
+
+            knn_accuracy.append(np.mean(cvresults["test_score"]))
+
+        if set_numpy == True:
+            knn_accuracy = np.array(knn_accuracy)
+
+    else:
+        clf = KNeighborsClassifier(
+            n_neighbors=k, algorithm="brute", n_jobs=-1, metric=metric
+        )
+        cvresults = cross_validate(clf, embeddings, labels, cv=10)
+
+        knn_accuracy = np.mean(cvresults["test_score"])
+
     return knn_accuracy
