@@ -1,19 +1,21 @@
 # Files
 results/variables/iclr24v2/*
-!results/variables/iclr24v2/embeddings_sbert/tsne_av.npy
 !results/variables/iclr24v2/colors_iclr.npy
 !results/variables/iclr24v2/dict_label_to_color.pkl
 !results/variables/iclr24v2/tsne_L2_svd.npy
 !results/variables/iclr24v2/names_and_genders.parquet
 
-results/variables/iclr24v2a/*
-!results/variables/iclr24v2a/embeddings_sbert/tsne_av.npy
-!results/variables/iclr24v2a/colors_iclr.npy
-!results/variables/iclr24v2a/dict_label_to_color.pkl
-!results/variables/iclr24v2a/tsne_L2_svd.npy
-!results/variables/iclr24v2a/names_and_genders.parquet
-results/figures/*
-!results/figures/final_figures
+!results/variables/iclr24v2/embeddings_sbert
+!results/variables/iclr24v2/embeddings_cohere
+!results/variables/iclr24v2/embeddings_openai
+results/variables/iclr24v2/embeddings_sbert/*
+results/variables/iclr24v2/embeddings_cohere/*
+results/variables/iclr24v2/embeddings_openai/*
+!results/variables/iclr24v2/embeddings_sbert/tsne_av.npy
+!results/variables/iclr24v2/embeddings_cohere/tsne_av.npy
+!results/variables/iclr24v2/embeddings_openai/tsne_av.npy
+
+results/figures/tmp
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
