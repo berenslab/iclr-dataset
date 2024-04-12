@@ -4,8 +4,18 @@ The ICLR dataset is a complete scrape of ICLR submissions from OpenReview. It co
 
 ![ICLR dataset, SBERT embedding](/results/figures/embedding.png)
 
+The dataset is described in González-Márquez & Kobak, González Márquez et al., Learning representations of learning representations, DMLR workshop at ICLR 2024. Please cite as follows:
 
-## Dataset snapshot
+```
+@inproceedings{gonzalez2024learning,
+  title={Learning representations of learning representations},
+  author={Gonz{\'a}lez-M{\'a}rquez, Rita and Kobak, Dmitry},
+  booktitle={Data-centric Machine Learning Research (DMLR) workshop at ICLR 2024},
+  year={2024}
+}
+```
+
+## Dataset description
 Each sample corresponds to a **submitted** article to the ICLR conference and includes as features:
 -  Year
 -  OpenReview Id
@@ -23,28 +33,12 @@ To label the dataset, we relied on the author-provided keywords and used them to
 
 Note that 26 submissions with placeholder abstracts (below 100 characters) are excluded.
 
-### Descriptive statistics
+## Descriptive statistics
 ![ICLR dataset, summary statistics](/results/figures/summary-stats.png)
 
 ## Data version and maintenance
 The dataset will be updated yearly.
 
-**Last Updated:** 04/2024
-
-**Update:** Add deanonymized submissions.
-
-
-## Citations
-
-The dataset is described in González-Márquez & Kobak, González Márquez et al., Learning representations of learning representations, DMLR workshop at ICLR 2024. Please cite as follows:
-
-```
-@inproceedings{gonzalez2024learning,
-  title={Learning representations of learning representations},
-  author={Gonz{\'a}lez-M{\'a}rquez, Rita and Kobak, Dmitry},
-  booktitle={Data-centric Machine Learning Research (DMLR) workshop at ICLR 2024},
-  year={2024}
-}
-```
+**Last Updated:** 04/2024: added deanonymized submissions to ICLR 2024.
 
 
