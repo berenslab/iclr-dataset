@@ -29,7 +29,7 @@ Each sample corresponds to a **submitted** article to the ICLR conference and in
   
 To label the dataset, we relied on the author-provided keywords and used them to assign papers to 45 non-overlapping classes. We combined some keywords together into one class (e.g. *attention* and *transformer*), disregarded very broad keywords (e.g. *deep learning*), and assigned papers to rarer classes first. Using this procedure, we ended up labeling 53.4% of all papers.
 
-![image](https://github.com/berenslab/iclr-dataset/assets/82372364/2fa62933-7a71-4231-b009-31ababd88a50)
+![ICLR dataset, dataframe screenshot](https://github.com/berenslab/iclr-dataset/assets/82372364/2fa62933-7a71-4231-b009-31ababd88a50)
 
 Note that 26 submissions with placeholder abstracts (below 100 characters) are excluded.
 
