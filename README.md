@@ -4,7 +4,7 @@ The ICLR dataset is a complete scrape of ICLR submissions from OpenReview. It co
 
 ![ICLR dataset, SBERT embedding](/results/figures/embedding.png)
 
-The dataset is described in González-Márquez & Kobak, Learning representations of learning representations, DMLR workshop at ICLR 2024. Please cite as follows:
+The dataset is described in [González-Márquez & Kobak, Learning representations of learning representations, DMLR workshop at ICLR 2024](https://arxiv.org/abs/2404.08403). Please cite as follows:
 
 ```
 @inproceedings{gonzalez2024learning,
