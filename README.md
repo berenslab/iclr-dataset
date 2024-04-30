@@ -34,7 +34,70 @@ To label the dataset, we relied on the author-provided keywords and used them to
 Note that 26 submissions with placeholder abstracts (below 100 characters) are excluded.
 
 ## Descriptive statistics
+- **Dataset**: Abstracts submitted to ICLR in 2017-2024 (24,347 papers).
+- **Labels**: based on keywords, 45 classes, 53.4% labeled papers.
+- **Scores**: Reviewed papers had on average 3.7 reviews, with 93% having either 3 or 4 reviews. Across all 244 226 possible pairs of reviews of the same paper, the correlation coefficient between scores was 0.40.
+- **Basic statistics**:
 ![ICLR dataset, summary statistics](/results/figures/summary-stats.png)
+
+## Benchmark
+We propose to use the ICLR dataset as a benchmark for embedding quality. The ICLR dataset is not part of the training data of many of the existing off-the-shelf models, therefore it makes a good evaluation dataset. 
+We found that on this dataset, bag-of-words representation outperforms most dedicated sentence transformer models in terms of kNN classification accuracy, and the top performing language models barely outperform TF-IDF. We
+see this as a challenge for the NLP community: to train a language model without using the labels (self-supervised) that produces a sentence embedding that would surpass a naive bag-of-words representation by more than 1% in kNN accuracy.
+### Models performance
+
+| **Model**        | **High-dim.** | **2D** |
+|------------------|---------------|--------|
+| TF-IDF           | 59.2%         | 52.0%  |
+| SVD              | 58.9%         | 55.9%  |
+| SVD, $L^2$ norm. | 60.7%         | 56.7%  |
+| SimCSE           | 45.1%         | 36.3%  |
+| DeCLUTR-sci      | 52.7%         | 47.1%  |
+| SciNCL           | 58.8%         | 54.9%  |
+| SPECTER2         | 58.8%         | 54.1%  |
+| ST5              | 57.0%         | 52.6%  |
+| SBERT            | 61.6%         | 56.8%  |
+| Cohere v3        | 61.1%         | 56.4%  |
+| OpenAI v3        | 62.3%         | 57.1%  |
+
+### Evaluation code
+Do you want to evaluate your model on the ICLR benchmark? Here is the code for it:
+```
+import numpy as np
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import cross_validate
+
+def knn_accuracy_cv(embeddings, labels, k=10, metric="euclidean"):
+    """Computes kNN accuracy.
+
+    Parameters
+    ----------
+    embeddings : array
+        Embeddings of the ICLR dataset's abstracts.
+    labels : array
+        Class labels.
+    k : int, default=10
+        Number of nearest neighbors to use.
+    metric : str, default="euclidean"
+        Metric to use for distance computation for nearest neighbors.
+
+    Returns
+    -------
+    knn_accuracy : array
+        kNN accuracy.
+
+    """
+
+    clf = KNeighborsClassifier(
+        n_neighbors=k, algorithm="brute", n_jobs=-1, metric=metric
+    )
+    cvresults = cross_validate(clf, embeddings, labels, cv=10)
+
+    knn_accuracy = np.mean(cvresults["test_score"])
+
+    return knn_accuracy
+```
+
 
 ## Data version and maintenance
 The dataset will be updated yearly.
