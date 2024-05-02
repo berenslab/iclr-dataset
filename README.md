@@ -18,7 +18,7 @@ The dataset is described in [González-Márquez & Kobak, Learning representation
 ## Dataset description
 Each sample corresponds to a **submitted** article to the ICLR conference and includes as features:
 -  Year
--  OpenReview Id
+-  OpenReview ID
 -  Title
 -  Abstract
 -  Authors
@@ -34,16 +34,17 @@ To label the dataset, we relied on the author-provided keywords and used them to
 Note that 26 submissions with placeholder abstracts (below 100 characters) are excluded.
 
 ## Descriptive statistics
-- **Dataset**: Abstracts submitted to ICLR in 2017-2024 (24,347 papers).
-- **Labels**: based on keywords, 45 classes, 53.4% labeled papers.
-- **Scores**: Reviewed papers had on average 3.7 reviews, with 93% having either 3 or 4 reviews. Across all 244 226 possible pairs of reviews of the same paper, the correlation coefficient between scores was 0.40.
-- **Basic statistics**:
+- **Dataset:** Abstracts submitted to ICLR in 2017-2024 (24,445 papers).
+- **Labels:** based on keywords, 45 classes, 53.4% labeled papers.
+- **Reviewers:** Reviewed papers had on average 3.7 reviews, with 93% having either 3 or 4 reviews.
+- **Scores:** Across all 244,226 possible pairs of reviews of the same paper, the correlation coefficient between scores was 0.40.
+- **Basic statistics:**
 ![ICLR dataset, summary statistics](/results/figures/summary-stats.png)
 
 ## Benchmark
 We propose to use the ICLR dataset as a benchmark for embedding quality. The ICLR dataset is not part of the training data of many of the existing off-the-shelf models, therefore it makes a good evaluation dataset. 
 We found that on this dataset, bag-of-words representation outperforms most dedicated sentence transformer models in terms of kNN classification accuracy, and the top performing language models barely outperform TF-IDF. We
-see this as a challenge for the NLP community: to train a language model without using the labels (self-supervised) that produces a sentence embedding that would surpass a naive bag-of-words representation by more than 1% in kNN accuracy.
+see this as a challenge for the NLP community: to train a language model without using the labels (self-supervised) that produces a sentence embedding that would substantially surpass a naive bag-of-words representation in kNN accuracy.
 ### Models performance
 
 | **Model**        | **High-dim.** | **2D** |
@@ -62,40 +63,34 @@ see this as a challenge for the NLP community: to train a language model without
 
 ### Evaluation code
 Do you want to evaluate your model on the ICLR benchmark? Here is the code for it:
-```
+```python
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_validate
 
-def knn_accuracy_cv(embeddings, labels, k=10, metric="euclidean"):
-    """Computes kNN accuracy.
-
-    Parameters
-    ----------
-    embeddings : array
-        Embeddings of the ICLR dataset's abstracts.
-    labels : array
-        Class labels.
-    k : int, default=10
-        Number of nearest neighbors to use.
-    metric : str, default="euclidean"
-        Metric to use for distance computation for nearest neighbors.
-
-    Returns
-    -------
-    knn_accuracy : array
-        kNN accuracy.
-
-    """
-
+def knn_accuracy_cv(embeddings, labels):
     clf = KNeighborsClassifier(
-        n_neighbors=k, algorithm="brute", n_jobs=-1, metric=metric
+        n_neighbors=10, algorithm="brute", n_jobs=-1, metric="euclidean"
     )
     cvresults = cross_validate(clf, embeddings, labels, cv=10)
 
     knn_accuracy = np.mean(cvresults["test_score"])
 
     return knn_accuracy
+
+# load the dataset
+iclr2024 = pd.read_parquet("path/to/file/iclr24v2.parquet")
+
+# substitute for your embeddings
+embeddings = TfidfVectorizer(sublinear_tf=True).fit_transform(
+    iclr2024.abstract.to_list()
+)
+
+# compute the knn accuracy
+knn_acc = knn_accuracy_cv(
+    embeddings[iclr2024.labels != "unlabeled"],
+    iclr2024.labels[iclr2024.labels != "unlabeled"],
+)
 ```
 
 
