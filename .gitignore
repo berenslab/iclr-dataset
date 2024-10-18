@@ -15,7 +15,14 @@ results/variables/iclr24v2/embeddings_openai/*
 !results/variables/iclr24v2/embeddings_cohere/tsne_av.npy
 !results/variables/iclr24v2/embeddings_openai/tsne_av.npy
 
+results/variables/iclr25v1/*
+!results/variables/iclr25v1/embeddings_sbert
+results/variables/iclr25v1/embeddings_sbert/*
+!results/variables/iclr25v1/embeddings_sbert/tsne_av.npy
+
 results/figures/tmp
+results/figures/*.png
+results/figures/authors_poster_v1.pdf
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
