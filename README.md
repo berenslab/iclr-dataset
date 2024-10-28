@@ -97,6 +97,25 @@ knn_acc = knn_accuracy_cv(
 ## Data version and maintenance
 The dataset will be updated yearly.
 
-**Last Updated:** 04/2024: added deanonymized submissions to ICLR 2024.
+**Last Updated:** 10/2025: added submissions to ICLR 2025 and new labels.
 
+Labels are the same as for the 2024 dataset, except for:
+ 
+- class `contrastive learning` and `self-supervised learning` have been merged.
+ 
+- keyword `semantic segmentation` has been added to the class `object detection`.
+ 
+- keyword `multi-agent` has been added to the class `multi-agent RL`.
+ 
+- keywords `bert` and `text generation` have been added to the class `LLMs`.
+ 
+- For all keywords where it makes sense, plural has been aded (e.g. `adversarial attack` and `adversarial attacks`).
+
+- 6 new classes have been added:
+  - `safety` with keywords `ai safety` and `safety`.
+  - `alignment` with keywords `alignment` and `rlhf`.
+  - `code generation` with keywords `code generation` and `program synthesis`.
+  - `autonomous driving`.
+  - `knowledge graph`.
+  - `neuroscience`.
 
