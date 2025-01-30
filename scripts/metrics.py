@@ -7,7 +7,7 @@ from sklearn.model_selection import cross_validate
 def knn_acc(embeddings, true_labels, test_size=0.1, k = 10, rs=42, metric="euclidean"):
     random_state = np.random.seed(rs)
 
-    X_train, X_test, y_train, y_test = train_test_split(embed, true_labels, test_size=test_size, random_state = random_state)
+    X_train, X_test, y_train, y_test = train_test_split(embeddings, true_labels, test_size=test_size, random_state = random_state)
 
     knn = KNeighborsClassifier(n_neighbors=k, algorithm='brute', n_jobs=-1, metric=metric)
     knn = knn.fit(X_train, y_train)
