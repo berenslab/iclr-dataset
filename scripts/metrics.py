@@ -4,17 +4,16 @@ from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_validate
 
 
-def knn_acc(embeddings, true_labels, test_size=0.1, k = 10, rs=42, metric="euclidean"):
-    random_state = np.random.seed(rs)
+def knn_acc(embeddings, labels, test_size=0.1, k = 10, rs=42, metric="euclidean"):
 
-    X_train, X_test, y_train, y_test = train_test_split(embeddings, true_labels, test_size=test_size, random_state = random_state)
+    X_train, X_test, y_train, y_test = train_test_split(embeddings, labels, test_size=test_size, random_state = rs)
 
     knn = KNeighborsClassifier(n_neighbors=k, algorithm='brute', n_jobs=-1, metric=metric)
     knn = knn.fit(X_train, y_train)
     return knn.score(X_test, y_test)
 
 
-def knn_accuracy(embeddings, true_labels, test_size=0.1, k = 10, rs=42, metric="euclidean"):
+def knn_accuracy(embeddings, labels, test_size=0.1, k = 10, rs=42, metric="euclidean"):
     """Calculates kNN accuracy.
     
     Parameters
