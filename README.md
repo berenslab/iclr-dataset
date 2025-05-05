@@ -1,10 +1,10 @@
 # Learning representations of learning representations
 
-The ICLR dataset is a complete scrape of ICLR submissions from OpenReview. It contains 24,445 ICLR submissions from 2017 to 2024.
+The ICLR dataset is a complete scrape of ICLR submissions from OpenReview. The current version (25v2) contains 36,113 ICLR submissions from 2017 to 2025.
 
-![ICLR dataset, SBERT embedding](/results/figures/embedding.png)
+![ICLR dataset, SBERT embedding](/results/figures/iclr2025v2/embedding.png)
 
-The dataset is described in [González-Márquez & Kobak, Learning representations of learning representations, DMLR workshop at ICLR 2024](https://arxiv.org/abs/2404.08403). Please cite as follows:
+The dataset (version 24v2) is described in [González-Márquez & Kobak, Learning representations of learning representations, DMLR workshop at ICLR 2024](https://openreview.net/forum?id=2OObXL3AaZ) ([arXiv 2404.08403)](https://arxiv.org/abs/2404.08403)). Please cite as follows:
 
 ```
 @inproceedings{gonzalez2024learning,
@@ -21,20 +21,23 @@ Each sample corresponds to a **submitted** article to the ICLR conference and in
 -  OpenReview ID
 -  Title
 -  Abstract
--  Authors
+-  List of authors
+-  List of OpenReview author IDs (starting from 2021)
 -  Decision
 -  Scores
 -  Keywords
--  Labels
+-  Label
   
-To label the dataset, we relied on the author-provided keywords and used them to assign papers to 45 non-overlapping classes. We combined some keywords together into one class (e.g. *attention* and *transformer*), disregarded very broad keywords (e.g. *deep learning*), and assigned papers to rarer classes first. Using this procedure, we ended up labeling 53.4% of all papers.
+To label the dataset, we relied on the author-provided keywords and used them to assign papers to 40+ non-overlapping classes. We combined some keywords together into one class (e.g. *attention* and *transformer*), disregarded very broad keywords (e.g. *deep learning*), and assigned papers to rarer classes first. Using this procedure, we ended up labeling around one half of the dataset.
 
-![ICLR dataset, dataframe screenshot](https://github.com/berenslab/iclr-dataset/assets/82372364/2fa62933-7a71-4231-b009-31ababd88a50)
+![ICLR dataset, dataframe screenshot](https://github.com/user-attachments/assets/4d5259d3-13db-44ca-91d5-2e0d3b9ba59c)
 
-Note that 26 submissions with placeholder abstracts (below 100 characters) are excluded.
+Note that all submissions with placeholder abstracts (below 100 characters) are excluded.
 
-## Descriptive statistics
-- **Dataset:** Abstracts submitted to ICLR in 2017-2024 (24,445 papers).
+-------------------------------
+
+## Descriptive statistics (for 2024v2)
+- **Dataset:** Abstracts submitted to ICLR in 2017--2024 (24,445 papers).
 - **Labels:** based on keywords, 45 classes, 53.4% labeled papers.
 - **Reviewers:** Reviewed papers had on average 3.7 reviews, with 93% having either 3 or 4 reviews.
 - **Scores:** Across all 244,226 possible pairs of reviews of the same paper, the correlation coefficient between scores was 0.40.
@@ -45,7 +48,8 @@ Note that 26 submissions with placeholder abstracts (below 100 characters) are e
 We propose to use the ICLR dataset as a benchmark for embedding quality. The ICLR dataset is not part of the training data of many of the existing off-the-shelf models, therefore it makes a good evaluation dataset. 
 We found that on this dataset, bag-of-words representation outperforms most dedicated sentence transformer models in terms of kNN classification accuracy, and the top performing language models barely outperform TF-IDF. We
 see this as a challenge for the NLP community: to train a language model without using the labels (self-supervised) that produces a sentence embedding that would substantially surpass a naive bag-of-words representation in kNN accuracy.
-### Models performance
+
+### Models performance (for 2024v2)
 
 | **Model**        | **High-dim.** | **2D** |
 |------------------|---------------|--------|
@@ -62,7 +66,9 @@ see this as a challenge for the NLP community: to train a language model without
 | OpenAI v3        | 62.3%         | 57.1%  |
 
 ### Evaluation code
+
 Do you want to evaluate your model on the ICLR benchmark? Here is the code for it:
+
 ```python
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
@@ -93,13 +99,14 @@ knn_acc = knn_accuracy_cv(
 )
 ```
 
-
 ## Data version and maintenance
 The dataset will be updated yearly.
 
-**Last Updated:** 10/2025: added submissions to ICLR 2025 and new labels.
+**Update May 2025:** added full information on ICLR 2025 submissions. Fixed some bugs in scraping of 2017--2018 submissions. Added a new column with OpenReview IDs of each author (starting with 2021).
 
-Labels are the same as for the 2024 dataset, except for:
+**Update Oct 2024:** added blind submissions to ICLR 2025 and new labels.
+
+Labels are the same as for the 2024 dataset (see paper), except for:
  
 - class `contrastive learning` and `self-supervised learning` have been merged.
  
