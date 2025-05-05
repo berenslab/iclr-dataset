@@ -32,7 +32,7 @@ To label the dataset, we relied on the author-provided keywords and used them to
 
 ![ICLR dataset, dataframe screenshot](https://github.com/user-attachments/assets/4d5259d3-13db-44ca-91d5-2e0d3b9ba59c)
 
-Note that all submissions with placeholder abstracts (below 100 characters) are excluded.
+Note that all submissions with placeholder abstracts (below 100 characters) are excluded. Papers are ordered by year and OpenReview ID.
 
 -------------------------------
 
