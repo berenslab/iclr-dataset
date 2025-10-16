@@ -1,8 +1,9 @@
 # Learning representations of learning representations
 
-The ICLR dataset is a complete scrape of ICLR submissions from OpenReview. The current version (25v2) contains 36,113 ICLR submissions from 2017 to 2025.
+The ICLR dataset is a complete scrape of ICLR submissions from OpenReview. The current version (26v1) contains 55,906 ICLR submissions from 2017 to 2026.
 
 ![ICLR dataset, SBERT embedding](/results/figures/iclr2025v2/embedding.png)
+*Figure: t-SNE visualization of the SBERT embeddings of 25v2 version*
 
 The dataset (version 24v2) is described in [González-Márquez & Kobak, Learning representations of learning representations, DMLR workshop at ICLR 2024](https://openreview.net/forum?id=2OObXL3AaZ) ([arXiv 2404.08403](https://arxiv.org/abs/2404.08403)). Please cite as follows:
 
@@ -24,13 +25,14 @@ Each sample corresponds to a **submitted** article to the ICLR conference and in
 -  List of authors
 -  List of OpenReview author IDs (starting from 2021)
 -  Decision
--  Scores
--  Keywords
+-  List of reviewers' scores
+-  List of keywords
 -  Label
   
 To label the dataset, we relied on the author-provided keywords and used them to assign papers to 40+ non-overlapping classes. We combined some keywords together into one class (e.g. *attention* and *transformer*), disregarded very broad keywords (e.g. *deep learning*), and assigned papers to rarer classes first. Using this procedure, we ended up labeling around one half of the dataset.
 
 ![ICLR dataset, dataframe screenshot](https://github.com/user-attachments/assets/4d5259d3-13db-44ca-91d5-2e0d3b9ba59c)
+*Figure: dataframe screenshot of the 25v2 version.*
 
 Note that all submissions with placeholder abstracts (below 100 characters) are excluded. Papers are ordered by year and OpenReview ID.
 
@@ -100,11 +102,12 @@ knn_acc = knn_accuracy_cv(
 ```
 
 ## Data version and maintenance
-The dataset will be updated yearly.
 
-**Update May 2025:** added full information on ICLR 2025 submissions. Fixed some bugs in scraping of 2017--2018 submissions. Added a new column with OpenReview IDs of each author (starting with 2021).
+**Oct 2025:** added blind submissions to ICLR 2026. Improved keywords parsing (splitting by semicolon), also for previous years.
 
-**Update Oct 2024:** added blind submissions to ICLR 2025 and new labels.
+**May 2025:** added full information on ICLR 2025 submissions. Fixed some bugs in scraping of 2017--2018 submissions. Added a new column with OpenReview IDs of each author (starting with 2021).
+
+**Oct 2024:** added blind submissions to ICLR 2025 and new labels.
 
 Labels are the same as for the 2024 dataset (see paper), except for:
  
@@ -126,3 +129,4 @@ Labels are the same as for the 2024 dataset (see paper), except for:
   - `knowledge graph`.
   - `neuroscience`.
 
+**Apr 2024:** The workshop paper is finalized and published as camera-ready. Dataset version 24v2 is shared here.
