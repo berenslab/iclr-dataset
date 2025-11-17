@@ -104,6 +104,16 @@ knn_acc = knn_accuracy_cv(
 ## Data version and maintenance
 
 **Oct 2025:** added blind submissions to ICLR 2026. Improved keywords parsing (splitting by semicolon), also for previous years.
+Classes are the same as for the 2025v2 version (see below for changes w.r.t the paper version) except for:
+
+- 4 new classes have been added:
+
+  - `3D scenes` with keywords `3d reconstruction`, `novel view synthesis`, `nerf`, and `gaussian splatting`.
+  - `speech` with keywords `speech synthesis`, `text-to-speech`, and `speech recognition`.
+  - `molecules` with keywords `drug discovery` and `molecule generation`.
+  - `PDEs` with keywords `partial differential equations`, `dynamical systems`, `pdes`, and `pde`.
+    
+Note that when new classes are added they are used for the whole dataset (newly added papers but also older papers). That means that labels for some papers may be different to older versions of the dataset, since an older paper may belong now to an newly added class.
 
 **May 2025:** added full information on ICLR 2025 submissions. Fixed some bugs in scraping of 2017--2018 submissions. Added a new column with OpenReview IDs of each author (starting with 2021).
 
