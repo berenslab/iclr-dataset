@@ -29,6 +29,13 @@ results/variables/iclr25v2/*
 results/variables/iclr25v2/embeddings_sbert/*
 !results/variables/iclr25v2/embeddings_sbert/tsne_av.npy
 
+results/variables/iclr26v1/*
+!results/variables/iclr26v1/colors_iclr.npy
+!results/variables/iclr26v1/dict_label_to_color.pkl
+!results/variables/iclr26v1/embeddings_sbert
+results/variables/iclr26v1/embeddings_sbert/*
+!results/variables/iclr26v1/embeddings_sbert/tsne_av.npy
+
 results/figures/tmp
 results/figures/*.png
 results/figures/authors_poster_v1.pdf
