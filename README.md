@@ -2,8 +2,8 @@
 
 The ICLR dataset is a complete scrape of ICLR submissions from OpenReview. The current version (26v1) contains 55,906 ICLR submissions from 2017 to 2026.
 
-![ICLR dataset, SBERT embedding](/results/figures/iclr2025v2/embedding.png)
-*Figure: t-SNE visualization of the SBERT embeddings of 25v2 version*
+![ICLR dataset, SBERT embedding](/results/figures/iclr2026v1/embedding.png)
+*Figure: t-SNE visualization of the SBERT embeddings of 26v1 version*
 
 The dataset (version 24v2) is described in [González-Márquez & Kobak, Learning representations of learning representations, DMLR workshop at ICLR 2024](https://openreview.net/forum?id=2OObXL3AaZ) ([arXiv 2404.08403](https://arxiv.org/abs/2404.08403)). Please cite as follows:
 
@@ -104,7 +104,7 @@ knn_acc = knn_accuracy_cv(
 ## Data version and maintenance
 
 **Oct 2025:** added blind submissions to ICLR 2026. Improved keywords parsing (splitting by semicolon), also for previous years.
-Classes are the same as for the 2025v2 version (see below for changes w.r.t the paper version) except for:
+Classes are the same as for the 2025v2 version (see below for changes w.r.t. the paper version) except for:
 
 - 4 new classes have been added:
 
