@@ -1,0 +1,2275 @@
+000
+001
+002
+003
+004
+005
+006
+007
+008
+009
+010
+011
+012
+013
+014
+015
+016
+017
+018
+019
+020
+021
+022
+023
+024
+025
+026
+027
+028
+029
+030
+031
+032
+033
+034
+035
+036
+037
+038
+039
+040
+041
+042
+043
+044
+045
+046
+047
+048
+049
+050
+051
+052
+053Under review as a conference paper at ICLR 2026
+Q-RAG: L ONG CONTEXT MULTI -STEPRETRIEVAL
+VIAVALUE -BASED EMBEDDER TRAINING
+Anonymous authors
+Paper under double-blind review
+ABSTRACT
+Retrieval-Augmented Generation (RAG) methods enhance LLM performance by
+efficiently filtering relevant context for LLMs, reducing hallucinations and infer-
+ence cost. However, most existing RAG methods focus on single-step retrieval,
+which is often insufficient for answering complex questions that require multi-
+step search. Recently, multi-step retrieval approaches have emerged, typically
+involving the fine-tuning of small LLMs to perform multi-step retrieval. This type
+of fine-tuning is highly resource-intensive and does not enable the use of larger
+LLMs. In this work, we propose Q-RAG, a novel approach that fine-tunes the Em-
+bedder model for multi-step retrieval using reinforcement learning (RL). Q-RAG
+offers a competitive, resource-efficient alternative to existing multi-step retrieval
+methods for open-domain question answering and achieves state-of-the-art results
+on the popular long-context benchmarks BabiLong and RULER for contexts up to
+10M tokens.
+1 I NTRODUCTION
+Large language models (LLMs) have achieved impressive results across a wide range of tasks
+(Novikov et al., 2025; Guo et al., 2025; Yang et al., 2025). However, they still face some sev-
+eral fundamental limitations such as static knowledge, computational inefficiency on long contexts,
+degraded performance caused by attention dilution, and hallucinations (Hsieh et al., 2024; Kuratov
+et al., 2024; Liu et al., 2025). Retrieval-Augmented Generation (RAG) is one of the most widely
+used techniques to address these issues (Yu et al., 2024).
+RAG works by extracting only the most relevant parts from a large external corpus or context, such as
+newly added knowledge or lengthy texts. This allows LLMs to operate on shorter and more focused
+inputs, improving efficiency and output quality. Most current RAG methods rely on single-step re-
+trieval. This setup performs well in relatively simple tasks like Needle-in-a-Haystack (Hsieh et al.,
+2024). Still, more complex problems require multi-step interaction with the context. Multi-step
+retrieval can be viewed as a form of search-based reasoning. There are several existing approaches
+to multi-step retrieval reasoning. One direction involves constructing a knowledge graph from the
+retrieved information (Ma et al., 2025; Li et al., 2024). These methods are often slow at infer-
+ence time, since the LLM must process the entire context to build the graph for each new input.
+Another line of work uses LLM agents, which interleave RAG queries with LLM-generated instruc-
+tions (Singh et al., 2025; Anokhin et al., 2024). These systems are sensitive to noisy or inaccurate
+retrieved passages, which may disrupt the generation of future queries. This shows the need for
+joint optimization of the retrieval and generation components. Recently, methods have emerged that
+fine-tune LLMs to interact more effectively with retrieval tools (Song et al., 2025; Jin et al., 2025;
+Chen et al., 2025). These methods tend to perform better, but they require expensive fine-tuning
+of the LLM itself. This makes them impractical for large models and limits accessibility for most
+researchers and practitioners.
+In this work, we focus on developing a resource-efficient multi-step RAG approach using reinforce-
+ment learning. Instead of fine-tuning an LLM, we train an agent that performs retrieval directly in
+the latent space of text chunk embeddings. This allows us to learn a compact and efficient model
+using value-based RL methods.
+Our approach achieves state-of-the-art results on long-context commonsence reasoning, multi-hop
+QA, and NIAH tasks with contexts up to 10 million tokens. It also performs competitively on
+1
+054
+055
+056
+057
+058
+059
+060
+061
+062
+063
+064
+065
+066
+067
+068
+069
+070
+071
+072
+073
+074
+075
+076
+077
+078
+079
+080
+081
+082
+083
+084
+085
+086
+087
+088
+089
+090
+091
+092
+093
+094
+095
+096
+097
+098
+099
+100
+101
+102
+103
+104
+105
+106
+107Under review as a conference paper at ICLR 2026
+open-domain QA benchmarks such as Musique and HotpotQA (Yang et al., 2018;?), while being
+significantly faster and cheaper to train and run compared to existing multi-step RAG methods. Our
+contributions are the following:
+• We propose a new method for training a multi-step retrieval agent using temporal difference
+reinforcement learning.
+• We achieve state-of-the-art results on benchmarks that require commonsense reasoning and
+NIAH tasks over ultra long contexts (up to 10M tokens).
+• We introduce a new way to incorporate temporal information into the multi-step embedder,
+enabling temporal reasoning during retrieval. Our temporal reasoning mechanism general-
+izes well to long contexts at inference time.
+2 R ELATED WORKS
+There are several main directions for tackling complex retrieval scenarios on long context tasks.
+A highly popular approach involves building fine-tuning free LLM Agents that combine off-the-shelf
+retrievers with LLMs, such as Search-o1 (Li et al., 2025). Many of these works further enhance
+retrieval quality by constructing large knowledge graphs over the context, which, while requiring
+little additional training, are extremely slow at inference due to the need for LLMs to process the
+entire context, e.g. GraphReader (Li et al., 2024), HippoRAG (Jimenez Gutierrez et al., 2024),
+AriGraph (Anokhin et al., 2024).
+Another line of work fine-tunes LRMs to perform multi-step retrieval, allowing the model to gener-
+ate intermediate search queries inside the reasoning for long contexts. The first work to apply this
+idea was IM-RAG (Yang et al., 2024), which fine-tuned the LLM with a frozen embedder using
+PPO (Schulman et al., 2017). More recent papers, such as R1-Searcher (Song et al., 2025), Search-
+R1 (Jin et al., 2025), RAG-RL (Huang et al., 2025), and ReSearcher (Chen et al., 2025), extended
+this direction by employing GRPO (Shao et al., 2024) for the task. Unlike these methods, which
+freeze the embedder and fine-tune the LLM, our approach fine-tunes only the embedder, allowing it
+to pair with LLMs of any size, including proprietary ones, while keeping fine-tuning efficient and
+inexpensive.
+A different approach is to fine-tune the retriever itself using feedback from the LLM, as in Re-
+Plug (Shi et al., 2024). This direction is most similar to ours, but RePlug did not address multi-step
+reasoning or use reinforcement learning in this setting. BeamRetriever (Zhang et al., 2024) achieves
+state-of-the-art results on short-context QA by training a reranker for BeamSearch-style planning.
+In contrast, Q-RAG trains the embedder with reinforcement learning, enabling faster inference and
+better scalability to long contexts through efficient vector similarity instead of transformer-based
+trajectory scoring.
+Extremely long-sequence processing is demonstrated by models that combine recurrence with
+Transformer architecture. The Mamba family of state space models (Gu & Dao, 2024) replaces at-
+tention with structured recurrent dynamics, offering linear-time scalability and strong performance
+on long sequences, though often at the cost of weaker in-context learning and less expressive token-
+to-token interaction compared to Transformer-based architectures. The Recurrent Memory Trans-
+former (RMT) (Bulatov et al., 2022) introduces segment-level recurrence by passing memory tokens
+between fixed-size segments, enabling Q&A on sequences up to 10M tokens. Titans (Behrouz et al.,
+2024) frames recurrent memory training as a meta-learning problem, showing scaling beyond 2M
+tokens. Building on this idea, ATLAS (Behrouz et al., 2025) increases memory capacity, achieving
+better long-context performance than both RMT and Titans. The Associative Recurrent Memory
+Transformer (ARMT) (Rodkin et al., 2024) employs quasi-linear, associative attention in each layer
+and attains the best long-context scores among recurrent models. Our approach outperforms all of
+these models on contexts beyond 1M tokens while belonging to a different class of methods.
+LongRoPE2 (Shang et al., 2025) tackles the positional encoding bottleneck, extending the effective
+context window of pre-trained LLMs to 128K tokens while retaining short-context performance
+through RoPE rescaling and mixed-window training.
+2
+108
+109
+110
+111
+112
+113
+114
+115
+116
+117
+118
+119
+120
+121
+122
+123
+124
+125
+126
+127
+128
+129
+130
+131
+132
+133
+134
+135
+136
+137
+138
+139
+140
+141
+142
+143
+144
+145
+146
+147
+148
+149
+150
+151
+152
+153
+154
+155
+156
+157
+158
+159
+160
+161Under review as a conference paper at ICLR 2026
+3 M ETHODS
+...John 
+stayed 
+late 
+at 
+the 
+office...
+Q-RAG 
+Agent
+Environment
+...He 
+briefly 
+stopped 
+by 
+home...
+ 
+hebought 
+something 
+at 
+the 
+pharmacy...
+...that, 
+he 
+spent 
+twenty 
+minutes 
+at 
+a 
+café...
+Outside 
+his 
+place, 
+he 
+realized 
+his 
+keys 
+were 
+...He 
+stayed 
+overnight 
+at 
+his 
+neighbor?s 
+place...
+Question: 
+Where 
+could 
+John 
+have 
+forgotten 
+his 
+keys?
+Answer: 
+cafe, 
+pharmacy
+State 
+Embedder
+Action 
+Embedder 
+Q 
+values
+reward 
+function 
+/ 
+critic. 
+. 
+....that, 
+he 
+spent 
+twenty 
+minutes 
+at 
+a 
+café...
+Long-Context 
+Document
+Next 
+timestep
+Figure 1: Q-RAG agent interacts with multi-step retrieval environment. The starting state s0contains
+the initial query q. At the start of the episode, the agent embeds all chunks of the long context C.
+At each step t, the agent computes a vector embedding of the current state st, which includes q
+and all previously selected chunks. For every chunk ci∈At, the utility of retrieving it is evaluated
+by the Q-function Qθ(st, a=ci). The policy πθselects the next chunk from Atwith probability
+proportional to its Qθ(st, ci)value.
+3.1 P RELIMINARIES
+LetDbe a dataset of triples (C, q, y), where Cis a long context, qis an initial query, and yis
+the gold answer. The query qcan be either a user question about Cor a generated claim whose
+factuality or consistency with earlier parts of Cmust be verified. We assume Cis pre-segmented
+into non-overlapping1text chunks C={c(i)}m
+i=1in document order. The agent’s goal is to identify
+the information in Cthat is missing from qbut necessary to produce the correct answer y. We model
+multi-step retrieval as a finite-horizon Markov Decision Process, or MDP (S,A, p, r, γ ), where A
+is the action space, Sis the state space, ris the reward function, pis the (deterministic) transition
+function, and γ∈[0,1]is the discount factor. At step t= 0, the action set is A0=C, where
+an action at∈Atselects one chunk. At later steps, previously selected chunks are removed so
+At=C\ {a0, . . . , a t−1}. Superscripts indicate document positions and subscripts indicate episode
+timesteps. The notation ai(equivalently c(i)) denotes the chunk/action at position iin the document;
+selecting the chunk with index iat step tis written ai
+t. Symbols candaare used interchangeably,
+depending on context.
+States are ordered lists that always begin with the query, st= ord([ q, a0, . . . , a t−1]), where ord(·)
+sorts by the original document order to avoid permutation ambiguity; the initial state contains only
+the query, s0= [q]. Transitions are deterministic, p(st, at) = ord([ q, a0, . . . , a t−1, at]). An episode
+terminates either when a step budget Tis reached or when a special S TOPaction is taken.
+When supervision provides a set of support facts F⋆⊆C, we use a sparse terminal reward: the
+reward is 0at all intermediate steps, and at the end of the episode it is 1if all support facts are
+included in the final state (otherwise 0). When only answer supervision is available, one could
+instead use an LLM to generate ˆyfrom the final state and define a terminal reward via an answer-
+quality metric (e.g., exact match or F1). In this work we do not pursue LLM-based rewards; all
+reported experiments rely on the support-fact signal, and exploring LLM-based reward design is left
+for future work.
+1Chunk overlapping may complicate the explanation but does not affect our proposed solution.
+3
+162
+163
+164
+165
+166
+167
+168
+169
+170
+171
+172
+173
+174
+175
+176
+177
+178
+179
+180
+181
+182
+183
+184
+185
+186
+187
+188
+189
+190
+191
+192
+193
+194
+195
+196
+197
+198
+199
+200
+201
+202
+203
+204
+205
+206
+207
+208
+209
+210
+211
+212
+213
+214
+215Under review as a conference paper at ICLR 2026
+3.2 V ALUE -BASED RL FOR EMBEDDER FINE-TUNING
+Action selection in multi-step retrieval is performed by a value-based agent. Specifically, maximum-
+entropy reinforcement learning (Ziebart, 2010; Haarnoja et al., 2018) is adopted together with the
+corresponding definitions of the soft QπandVπvalue functions for a policy π:
+Qπ(s, a) =r(s, a) +γVπ(s′=p(s, a)) (1)
+Vπ(s) =Ea∼π(·|s)[Qπ(s, a)−αlogπ(a|s)] (2)
+Here, α >0is a temperature that controls the strength of exploration. This choice is primarily mo-
+tivated by the need for effective exploration in the long-context multi-step retrieval environment. In
+Q-RAG, Q function is approximated using two embedders for states and actions. The state embed-
+derEs(st;θ1)∈Rdproduces vector embedding for the current state st, while the action embedder
+Ea(ai, i;θ2)∈Rdemploy rotary position embeddings to encode both the candidate chunk content
+and its document-position index i. Q values are then estimated by an inner product between two em-
+beddings: Qθ(s, ai) =⟨Es(s;θ1), Ea(ai, i;θ2)⟩. This factorization is theoretically grounded; we
+derive its convergence guarantees with explicit rates in Appendix A. Given Qθ, the chunk selection
+probability is computed using a Boltzmann policy:
+π(at|st) =exp1
+α(Qθ(st, at)−q)P
+a∈Atexp1
+α(Qθ(st, a)−q)(3)
+withq= max a∈AtQθ(st, a)and temperature αannealed from an initial value to zero during train-
+ing (proportionally to the learning rate).
+As the backbone Temporal Difference learning algorithm, we adopt the recent PQN method by
+Gallici et al.. Compared to DQN (Mnih et al., 2015), PQN removes the need for a replay buffer. In
+our setting with a large number of chunks, a replay buffer would require re-embedding all document
+chunks for each sample drawn from the replay buffer to estimate V/Q values for subsequent states
+st+1. Which significantly slows the training process and increases memory space requirements.
+Using PQN enables an on-policy value-based training that avoids these costs. The key departures
+in Q-RAG, relative to the original PQN backbone, are the use of soft value functions and target
+networks. Ablation results demonstrating the benefit of these choices are reported in Section 4.5.
+As the training target, rather than the one-step return (see r.h.s. in Eq. 1), a λ-return is used to
+improve stability and learning speed:
+Gλ
+t= (1−λ)T−t−1X
+n=1λn−1Gt:t+n+λT−t−1Gt,
+where Gt:t+n=Pn
+k=1γk−1rt+k+Vθ′(st+n). The approximation of the state value function can
+be computed from Q values in the case of discrete actions:
+Vθ′(st) =αlogX
+a∈AtexpQθ′(st, a)
+α
+(4)
+Hereθ′denotes slowly updated target network parameters. The model parameters θare finetuned to
+minimize the mean squared error to the λ-returns:
+LQ=E[(Qθ(st, at)−Gλ
+t)2] (5)
+The Q-RAG pseudocode is presented in Algorithm 1.
+3.3 T EMPORAL REASONING FOR LONG -CONTEXT SEARCH
+When dealing with narrative text, the information contained in a text chunk cmay be insufficient
+to determine whether chelps us answer the question q. For example, we may need to know what
+happened before some specific event. A standard retriever can find several relevant text chunks that
+specify the character’s location, but choosing the correct one can be impossible without taking into
+account temporal information. To address this, we propose a relative postional encoding of chunks
+that explicitly encodes their position with respect to the facts already extracted into the state. At
+stept, letSt={i1<···< ik}be the (sorted) document indices of selected chunks and Atthe set
+4
+216
+217
+218
+219
+220
+221
+222
+223
+224
+225
+226
+227
+228
+229
+230
+231
+232
+233
+234
+235
+236
+237
+238
+239
+240
+241
+242
+243
+244
+245
+246
+247
+248
+249
+250
+251
+252
+253
+254
+255
+256
+257
+258
+259
+260
+261
+262
+263
+264
+265
+266
+267
+268
+269Under review as a conference paper at ICLR 2026
+Algorithm 1 Q-RAG
+1:Hyperparameters:
+2: Environments count K, retrieval steps T, temperature α, TD parameter λ, EMA τ.
+3:Initialize:
+4: State embedder Es(s;θ1)
+5: Action embedder Ea(ai, i;θ2)with position i
+6: Critic Qθ(s, ai) =Es(s;θ1)TEa(ai, i;θ2)
+7: Critic target Qθ′(s, ai)
+8:procedure COMPUTE TARGETS ({st, at, rt, vt}T+1
+t=1)
+9: Initialize λ-returns GT=rT+γvT+1
+10: fort=T−1downto 1do
+11: Gt=rt+γ
+(1−λ)vt+1+λGt+1
+12: end for
+13: return {Gt}T
+t=1
+14:end procedure
+15:Training (one update step)
+16:forenvk∈1, . . . , K in parallel do
+17: s1,A1=ResetQueryAndContext()
+18: Compute Ea=Ea(A;θ)andE′
+a=Ea(A;θ′)
+19: forstept∈1, . . . , T + 1do
+20: at∼softmax a∈At1
+αEs(s;θ)TEa
+21: vt=αlogP
+a∈Aexp1
+αEs(s;θ′)TE′
+a
+22: rt=ComputeReward (st, at)
+23: st+1=concatenate (st, at)
+24: At+1=At\ {at}
+25: end for
+26: B={st, at, rt, vt}T+1
+t=1
+27: {Gk
+t}T
+t=1=ComputeTargets (B)
+28:end for
+29:∇LQ=1
+TKPK
+k=1PT
+t=1∇θ(Qθ(sk
+t, ak
+t)−Gk
+t)2
+30:Update θusing∇LQ
+31:Update target parameters: θ′←τθ+ (1−τ)θ′
+of available actions. The indices in Stpartition the document into k+1disjoint intervals: “before
+the earliest selected fact”, “between consecutive selected facts”, and “after the latest selected fact.”
+The relative positional mapping ρt:N→R+assigns to every original chunk index a real-valued
+index that (i) identifies the interval it belongs to and (ii) preserves the relative order between chunks.
+This mapping makes explicit between which extracted facts a chunk lies, while remaining invariant
+to global shifts of absolute positions.
+Formally, the interval boundaries are defined as b0=1,bj=ijforj=1:k, and bk+1=m+1forC=
+{c(i)}m
+i=1. To compute relative index ρt(i)for a chunk ci, find the unique jsuch that bj≤i < b j+1
+and set
+ρt(i) = j δ+ℓi−bj
+bj+1−bj, (6)
+where δ > 0is the inter-interval step and ℓ∈(0, δ)controls the within-interval resolution (e.g.,
+δ=10,ℓ=9in our experiments). In the action embedder, the absolute position is replaced by the
+relative one,
+Ea 
+ai, i;θ2
+⇒Ea 
+ai, ρt(i);θ2
+, (7)
+which allows the Q-function to exploit the spatial relation of candidates to already retrieved evidence
+while retaining local order within each interval. This design allows the retrieval agent to perform
+strongly not only on fact-finding over disjoint document collections, but also on long-form narrative
+tasks, enabling Q-RAG to compete with recurrent transformers (Bulatov et al., 2022; Rodkin et al.,
+2024; Behrouz et al., 2025; 2024) and other long context approaches.
+5
+270
+271
+272
+273
+274
+275
+276
+277
+278
+279
+280
+281
+282
+283
+284
+285
+286
+287
+288
+289
+290
+291
+292
+293
+294
+295
+296
+297
+298
+299
+300
+301
+302
+303
+304
+305
+306
+307
+308
+309
+310
+311
+312
+313
+314
+315
+316
+317
+318
+319
+320
+321
+322
+323Under review as a conference paper at ICLR 2026
+4 E XPERIMENTS
+4.1 E XPERIMENTAL SETUP
+We evaluate our approach, Q-RAG, on tasks that cover commonsence reasoning, temporal reason-
+ing, a bunch of needle in a haystack tasks and open-domain multi-hop question answering tasks on
+context lengths that range from 4k tokens to 10M tokens per sample. For commonsence and tempo-
+ral reasoning we use BabiLong benchmark (Kuratov et al., 2024), for Needle-in-a-Haystack we use
+RULER benchmark Hsieh et al. (2024). For open-domain multi-hop QA we use HotpotQA Yang
+et al. (2018), Musique Trivedi et al. (2022) and RULER benchmarks. BabiLong and RULER re-
+quire long contexts. Musique and HotpotQA use short contexts.
+Baselines differ by task. Computing a uniform set of baselines across all datasets is difficult and
+time-consuming. Many methods do not release code. Some methods were evaluated only on some
+of these datasets. Even when the tasks match, the experimental settings often differ for the same
+benchmarks. Some baselines provide code but require heavy resources (e.g., at least 8 ×A100 GPUs
+Jin et al. (2025); Song et al. (2025); Huang et al. (2025)) to fine-tune, which are unavailable for us.
+Therefore, we report three types of baselines, and we mark each baseline in tables accordingly:
+•×Ablation : baselines that test the effectiveness of our proposed modifications.
+•✓Reproduced : baselines that we finetuned and/or evaluated on our datasets using released
+code or publicly available checkpoints.
+•◦Reported : baselines whose scores we take directly from the original papers.
+4.2 C OMMONSENSE REASONING ON ULTRA -LONG CONTEXTS
+On the BabiLong Kuratov et al. (2024) benchmark, we compared our method with the state-of-the-
+art long-context processing approaches, including Titans Behrouz et al. (2024), Atlas Behrouz et al.
+(2025), ARMT Rodkin et al. (2024), RMT Bulatov et al. (2022), as well as proprietary LLMs and
+LLM-based agents. The results for most of these baselines were taken directly from the respective
+original papers. As shown in Figure 2b, our approach achieves the highest average performance
+on BabiLong in ultra-long contexts ranging from 1 to 10 million tokens, demonstrating superior
+generalization to long contexts compared to other specialized long-context methods.
+In Figure 2a, we present separate results for the QA3 subtask, which is the hardest subtask in the
+BabiLong benchmark, which specifically requires the multistep search of at least 3 different facts
+and temporal reasoning. Experimental results show that the majority of models perform worst on the
+QA3 subtask. As the results indicate, alternative long-context approaches show even greater perfor-
+mance degradation on this task with increasing context length. In contrast, Q-RAG shows virtually
+no degradation, with the largest performance gap over all baselines observed on this most chal-
+lenging subtask. We additionally fine-tuned the Beam-Retriever baseline specifically on the QA3
+(a)
+ (b)
+Figure 2: Comparison of answer accuracy on the long-context benchmark BabiLong. Solid lines de-
+note methods fine-tuned on the BabiLong, while dashed lines denote zero-shot methods. a)Average
+performance across tasks Q1–QA5. b)Performance on the hardest task, QA3, which requires the
+longest reasoning chain and temporal awareness.
+6
+324
+325
+326
+327
+328
+329
+330
+331
+332
+333
+334
+335
+336
+337
+338
+339
+340
+341
+342
+343
+344
+345
+346
+347
+348
+349
+350
+351
+352
+353
+354
+355
+356
+357
+358
+359
+360
+361
+362
+363
+364
+365
+366
+367
+368
+369
+370
+371
+372
+373
+374
+375
+376
+377Under review as a conference paper at ICLR 2026
+subtasks, given its strong performance on open-domain QA datasets. However, this method failed
+to solve the task. Note that some methods, such as Titans Behrouz et al. (2024) and Atlas Behrouz
+et al. (2025), are absent from the Figure as they did not report detailed breakdowns by a subtask.
+4.3 N EEDLE IN A HAYSTACK AND LONG CONTEXT QA
+While reasoning tasks are crucial for evaluating advanced retrieval systems, a substantial portion
+of real-world applications reduces to Needle-in-a-Haystack (NIAH) problems, making it equally
+important that models deliver consistently strong performance on these tasks.
+RULER is a dataset that includes many long-context tasks. Most of these tasks follow the NIAH for-
+mulation. The NIAH setup evaluates the ability to retrieve a specific “needle” from a long distracting
+“haystack”.
+For RULER benchmark we use Titans Behrouz et al. (2024), Atlas Behrouz et al. (2025), Mamba2
+Waleffe et al. (2024), and LongRope2 Shang et al. (2025) as baselines. Titans, Atlas are recurrent
+transformers. Mamba2 is a state space model (SSM) that combines transformer components with
+SSM. LongRope2 is a method for extending the effective context window of LLMs. All methods
+were fine-tuned either directly on RULER (Titans, Atlas, Mamba2) or on related synthetic NIAH-
+style datasets (LongRope2). Q-RAG was also fine-tuned on the NIAH subtasks. For the Multi-hop
+QA RULER subtask, Q-RAG was fine-tuned on HotpotQA and evaluated on the Multi-hop QA
+subtask out-of-distribution.
+The results are shown in Table 1. Q-RAG achieves near-perfect performance on all NIAH subtasks.
+Q-RAG embedder was trained on 4K-length documents and generalizes to context lengths up to 1M
+tokens without loss of accuracy. On the Multi-hop QA subtask, Q-RAG shows significantly better
+Table 1: Results on the RULER benchmark, evaluating long-context retrieval performance across
+various context lengths. S(Single-needle): Find one value for one key. MK (Multi-keys): Find one
+value for one key among many. MV (Multi-values): Find all values for one key. MQ (Multi-query):
+Answer multiple questions over the context. MH QA : open domain multi-hop question answering.
+Length MethodsS MKMV MQ NIAH Avg. MH QA
+1-st 2-nd 3-rd 1-st 2-nd 3-rd
+4K◦Titans 98.4 99.8 89.4 n/a n/a n/a n/a n/a n/a n/a
+◦Atlas 99.2 100 90.6 n/a n/a n/a n/a n/a n/a n/a
+◦Mamba2-Hybrid 100 100 95.7 89.5 95.5 96 97.9 97.6 96.5 48.8
+◦LongRoPe2-8B 100 100 99 100 100 100 99 99.7 99.7 60
+✓Beam-Retriever 100 100 98 98 98 97 98 99 98.5 28.3
+Q-RAG 100 100 100 100 100 100 100 100 100 67
+16K◦Titans 96.2 80.2 n/a n/a n/a n/a n/a n/a n/a n/a
+◦Atlas 97 84 n/a n/a n/a n/a n/a n/a n/a n/a
+◦Mamba2-Hybrid 100 100 81.5 92 92.2 83 89.8 90.2 91.1 44
+◦LongRoPe2-8B 100 100 100 99 100 98 95 98.2 98.8 58
+✓Beam-Retriever 100 100 97 96.5 96 95 80 98 95.3 28.3
+Q-RAG 100 100 100 100 100 100 100 100 100 67
+32K◦Mamba2-Hybrid 100 100 96.7 84 76.5 81.5 84.3 80.9 88.0 38.5
+◦LongRoPe2-8B 100 100 100 99 98 100 98 96.2 98.9 55
+Q-RAG 100 100 100 100 100 100 100 100 100 67
+128K◦LongRoPe2-8B 100 100 99 96 91 94 96.5 97 96.7 50
+Q-RAG 100 100 100 100 100 100 100 100 100 62
+1M Q-RAG 100 100 100 100 98.5 99.0 100 100 99.7 57
+7
+378
+379
+380
+381
+382
+383
+384
+385
+386
+387
+388
+389
+390
+391
+392
+393
+394
+395
+396
+397
+398
+399
+400
+401
+402
+403
+404
+405
+406
+407
+408
+409
+410
+411
+412
+413
+414
+415
+416
+417
+418
+419
+420
+421
+422
+423
+424
+425
+426
+427
+428
+429
+430
+431Under review as a conference paper at ICLR 2026
+results than all our baselines at all context lengths we consider. Some degradation with increasing
+context length starts only from 128K.
+4.4 O PEN-DOMAIN QUESTION ANSWERING
+For our experiments on the HotPotQA and Musique datasets, we compared our method against
+several strong baselines. The first baseline is Beam Retriever, which enables multi-step retrieval
+by training a model to score sequences of retrieved chunks. During evaluation, Beam-Retriever is
+given the oracle number of supporting facts (i.e., the gold hop count) and always retrieves exactly
+that many facts. Although this approach is slower than traditional retrieval methods and does not
+scale well to longer contexts, it achieves state-of-the-art results on HotPotQA. Another baseline
+we considered is SearchR1, a recent method from a family of approaches that train the LLM itself
+to compose text queries for multi-step retrieval. Additionally, we evaluated the performance of
+LLM-agent-based methods, including GraphReader. Q-RAG and Beam-Retriever were fine-tuned
+on HotPotQA and evaluated on Musique for out-of-distribution testing. Baseline numbers were
+taken directly from the corresponding papers. Missing entries indicate metrics not reported by the
+original authors.
+The comparison results are presented in Table 2. Our method achieves fact retrieval accuracy on par
+with Beam Retriever, surpasses all other baselines on HotPotQA, and matches the performance of
+full-LLM-tuning Search-R1 while outperforming all alternatives on the out-of-distribution Musique
+dataset, resulting in the best overall performance across benchmarks. Results also include another
+Q-RAG version Plan Q-RAG that combines Q-RAG value function and beam search based planning
+(see Appendix D). Plan Q-RAG showed similar performance to vanilla Q-RAG. For both methods
+involving retrieval mechanism fine-tuning (Q-RAG and Beam Retriever), we used the QwQ-32B
+model to produce the final answer.
+Table 2: Comparison of methods on HotPotQA and Musique benchmarks. Bold text and underline
+denote the best and second best scores respectively.
+HotPotQA Musique (OOD) Avg
+Methods Fact F1 Fact EM Ans F1 Ans EM Fact F1 Fact EM Ans F1 Ans EM Ans F1 Ans EM
+Finetuned on HotPotQA
+Plan Q-RAG 0.95 0.91 0.76 0.60 0.69 0.53 0.51 0.36 0.64 0.48
+Q-RAG 0.93 0.89 0.76 0.59 0.71 0.55 0.52 0.37 0.64 0.48
+✓Beam-Retriever 0.97 0.94 0.77 0.61 0.61 0.36 0.40 0.27 0.59 0.44
+✓Search-r1 0.81 0.66 0.65 0.52 0.71 0.55 0.51 0.39 0.58 0.46
+◦RAG-RL 0.82 – 0.69 – 0.65 – 0.47 – 0.58 –
+×Multi-step RAG w.o. FT 0.73 0.54 0.65 0.50 0.51 0.30 0.40 0.27 0.53 0.39
+Zero Shot methods
+✓GraphReader – – 0.46 0.24 – – 0.40 0.20 0.43 0.22
+✓Single step RAG – – 0.53 0.39 – – 0.28 0.17 0.41 0.28
+4.5 A BLATION STUDY
+To assess the impact of the architectural choices in Q-RAG, an ablation study was conducted on
+the BabiLong-QA3 task. This benchmark was selected because it is among the most challenging
+long-context tasks used in the experiments and it supports evaluation at arbitrary context lengths.
+The following baselines were compared against Q-RAG:
+Multi-step RAG w.o. FT. This baseline reproduces the full Q-RAG retrieval pipeline and uses
+the same state and action embedders, but relies on their original pretrained weights without any
+reinforcement learning fine-tuning. This setting tests whether RL fine-tuning of the embedders is
+beneficial for multi-step retrieval quality.
+Multi-step RAG w. SFT. This baseline applies supervised fine-tuning using ground-truth support
+facts as supervision. The loss follows the objective used in BeamRetriever for trajectory supervision,
+8
+432
+433
+434
+435
+436
+437
+438
+439
+440
+441
+442
+443
+444
+445
+446
+447
+448
+449
+450
+451
+452
+453
+454
+455
+456
+457
+458
+459
+460
+461
+462
+463
+464
+465
+466
+467
+468
+469
+470
+471
+472
+473
+474
+475
+476
+477
+478
+479
+480
+481
+482
+483
+484
+485Under review as a conference paper at ICLR 2026
+0.00 0.01 0.02 0.03 0.04 0.05
+T emperature parameter 
+0.860.880.90.920.940.96Average return
+QA2 QA3
+(a)
+0.4 0.5 0.6 0.7 0.8
+TD parameter 
+0.930.940.950.960.970.98Average return
+QA2 QA3 (b)
+ (c)
+Figure 3: Ablation for (a) policy entropy coefficient ( α) in soft Q function and (b) for λ-return
+parameter. Inference runtime comparison (c), context length, tokens on x-axes.
+adapted to the multi-step retrieval setting. This setting isolates the effect of RL by comparing it to
+supervised learning on the same supervision signal.
+Q-RAG w.o. target. This variant removes target networks from the PQN-based value learning,
+following the original PQN recipe without target parameters. It measures the contribution of target
+networks to stability and performance in the Q-RAG training loop.
+Q-RAG w.o. Soft-Q. This variant replaces the maximum-entropy (soft) value functions with stan-
+dard (non-entropy-regularized) Q-learning objectives. It evaluates the effect of entropy regulariza-
+tion and the soft value formulation on retrieval performance.
+All baselines were evaluated with three random seeds. Table 3 reports results at a 32k-token con-
+text length on QA3. Figure 3 shows the sensitivity of Q-RAG to the λ-return parameter and the
+temperature α(the strength of entropy regularization) on QA2 and QA3.
+Table 3: Ablation results on BabiLong QA3. Table shows F1 score for support facts retrieval. All
+values are averaged over 3 runs with different seeds.
+Method 1K 4K 32K 128K 1M
+Q-RAG 97.8±0.17 97 .4±0.14 97 .1±0.08 96 .8±0.08 96 .5±0.16
+×Q-RAG w.o. Soft-Q 95.9±0.70 95 .5±0.80 94 .5±0.50 94 .0±0.30 93 .3±0.45
+×Q-RAG w.o. Target 79.2±26.0 78.1±26.6 77.6±27.2 77.4±27.3 75.9±28.2
+×Multi-Step RAG w. SFT 20.33±0.32 20.87±0.35 20.10±0.20 18.30±0.36 —
+×Multi-Step RAG w.o. FT 15.52±0.11 16.38±0.10 15.51±0.16 15.34±0.12 —
+5 C ONCLUSION
+This work introduced Q-RAG, a resource-efficient method for multi-step retrieval trained with re-
+inforcement learning directly in the latent space of text-chunk embeddings. Across long-context
+benchmarks (e.g., BabiLong ,RULER ) and open-domain QA datasets (e.g., Musique ,HotpotQA ),
+Q-RAG attains state-of-the-art or highly competitive results. Its advantage over baselines widens as
+context length grows, and performance shows minimal degradation even at ultra-long scales.
+A key practical benefit is compute efficiency: all training was performed on a single A100 GPU
+with 80 GB memory, whereas recent RL-based multi-step retrievers such as Search-R1/R1-Searcher
+typically report training on clusters of about eight A100 GPUs. By fine-tuning only the embedder
+while keeping the LLM frozen, Q-RAG remains easy to pair with powerful pre-trained or proprietary
+LLMs, enabling efficient training, flexible deployment, and strong retrieval over very long contexts.
+Looking ahead, promising directions include using structured LLM feedback as a reward signal,
+strengthening compositional and temporal reasoning directly in the embedding space, and exploring
+tighter integration with generation while preserving the method’s efficiency and scalability.
+9
+486
+487
+488
+489
+490
+491
+492
+493
+494
+495
+496
+497
+498
+499
+500
+501
+502
+503
+504
+505
+506
+507
+508
+509
+510
+511
+512
+513
+514
+515
+516
+517
+518
+519
+520
+521
+522
+523
+524
+525
+526
+527
+528
+529
+530
+531
+532
+533
+534
+535
+536
+537
+538
+539Under review as a conference paper at ICLR 2026
+6 R EPRODUCIBILITY STATEMENT .
+We make all results reproducible by providing a code package with exact configs and run scripts;
+all code is included in the supplementary materials. The package includes utilities to download
+andminimally preprocess the public HotPotQA andMuSiQue datasets and to re-run every experi-
+ment and table with fixed random seeds (Fact F1/EM, Answer F1/EM). We fine-tune only publicly
+available embedders — multilingual-e5-large andfacebook/contriever — strictly
+following the hyperparameters and schedules described in Appendix G. All reported runs are repro-
+ducible on a single GPU; our main experiments were executed on one A100-80GB device. The
+repository contains evaluation scripts that reproduce the reported tables without modification; full
+implementation specifics are referenced from Appendix G and the supplementary materials.
+REFERENCES
+Petr Anokhin, Nikita Semenov, Artyom Sorokin, Dmitry Evseev, Andrey Kravchenko, Mikhail Burt-
+sev, and Evgeny Burnaev. Arigraph: Learning knowledge graph world models with episodic
+memory for llm agents. arXiv preprint arXiv:2407.04363 , 2024.
+Ali Behrouz, Peilin Zhong, and Vahab Mirrokni. Titans: Learning to memorize at test time. arXiv
+preprint arXiv:2501.00663 , 2024.
+Ali Behrouz, Zeman Li, Praneeth Kacham, Majid Daliri, Yuan Deng, Peilin Zhong, Meisam Raza-
+viyayn, and Vahab Mirrokni. Atlas: Learning to optimally memorize the context at test time.
+arXiv preprint arXiv:2505.23735 , 2025.
+Aydar Bulatov, Yury Kuratov, and Mikhail Burtsev. Recurrent memory transformer. Advances in
+Neural Information Processing Systems , 35:11079–11091, 2022.
+Mingyang Chen, Tianpeng Li, Haoze Sun, Yijie Zhou, Chenzheng Zhu, Haofen Wang, Jeff Z Pan,
+Wen Zhang, Huajun Chen, Fan Yang, et al. Learning to reason with search for llms via reinforce-
+ment learning. arXiv preprint arXiv:2503.19470 , 2025.
+Matteo Gallici, Mattie Fellows, Benjamin Ellis, Bartomeu Pou, Ivan Masmitja, Jakob Nicolaus
+Foerster, and Mario Martin. Simplifying deep temporal difference learning. In The Thirteenth
+International Conference on Learning Representations .
+Albert Gu and Tri Dao. Mamba: Linear-time sequence modeling with selective state spaces, 2024.
+URLhttps://arxiv.org/abs/2312.00752 .
+Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu,
+Shirong Ma, Peiyi Wang, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms
+via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025.
+Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy
+maximum entropy deep reinforcement learning with a stochastic actor. In International confer-
+ence on machine learning , pp. 1861–1870. Pmlr, 2018.
+Cheng-Ping Hsieh, Simeng Sun, Samuel Kriman, Shantanu Acharya, Dima Rekesh, Fei Jia, Yang
+Zhang, and Boris Ginsburg. Ruler: What’s the real context size of your long-context language
+models? arXiv preprint arXiv:2404.06654 , 2024.
+Jerry Huang, Siddarth Madala, Risham Sidhu, Cheng Niu, Hao Peng, Julia Hockenmaier, and Tong
+Zhang. Rag-rl: Advancing retrieval-augmented generation via rl and curriculum learning. arXiv
+preprint arXiv:2503.12759 , 2025.
+Bernal Jimenez Gutierrez, Yiheng Shu, Yu Gu, Michihiro Yasunaga, and Yu Su. Hipporag: Neurobi-
+ologically inspired long-term memory for large language models. Advances in Neural Information
+Processing Systems , 37:59532–59569, 2024.
+Bowen Jin, Hansi Zeng, Zhenrui Yue, Jinsung Yoon, Sercan Arik, Dong Wang, Hamed Zamani, and
+Jiawei Han. Search-r1: Training llms to reason and leverage search engines with reinforcement
+learning. arXiv preprint arXiv:2503.09516 , 2025.
+10
+540
+541
+542
+543
+544
+545
+546
+547
+548
+549
+550
+551
+552
+553
+554
+555
+556
+557
+558
+559
+560
+561
+562
+563
+564
+565
+566
+567
+568
+569
+570
+571
+572
+573
+574
+575
+576
+577
+578
+579
+580
+581
+582
+583
+584
+585
+586
+587
+588
+589
+590
+591
+592
+593Under review as a conference paper at ICLR 2026
+Yury Kuratov, Aydar Bulatov, Petr Anokhin, Ivan Rodkin, Dmitry Sorokin, Artyom Sorokin, and
+Mikhail Burtsev. Babilong: Testing the limits of llms with long context reasoning-in-a-haystack.
+Advances in Neural Information Processing Systems , 37:106519–106554, 2024.
+Shilong Li, Yancheng He, Hangyu Guo, Xingyuan Bu, Ge Bai, Jie Liu, Jiaheng Liu, Xingwei Qu,
+Yangguang Li, Wanli Ouyang, et al. Graphreader: Building graph-based agent to enhance long-
+context abilities of large language models. In Findings of the Association for Computational
+Linguistics: EMNLP 2024 , pp. 12758–12786, 2024.
+Xiaoxi Li, Guanting Dong, Jiajie Jin, Yuyao Zhang, Yujia Zhou, Yutao Zhu, Peitian Zhang, and
+Zhicheng Dou. Search-o1: Agentic search-enhanced large reasoning models. arXiv preprint
+arXiv:2501.05366 , 2025.
+Jiaheng Liu, Dawei Zhu, Zhiqi Bai, Yancheng He, Huanxuan Liao, Haoran Que, Zekun Wang,
+Chenchen Zhang, Ge Zhang, Jiebin Zhang, et al. A comprehensive survey on long context lan-
+guage modeling. arXiv preprint arXiv:2503.17407 , 2025.
+Chuangtao Ma, Yongrui Chen, Tianxing Wu, Arijit Khan, and Haofen Wang. Large language mod-
+els meet knowledge graphs for question answering: Synthesis and opportunities, 2025. URL
+https://arxiv.org/abs/2505.20099 .
+V olodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu, Joel Veness, Marc G Belle-
+mare, Alex Graves, Martin Riedmiller, Andreas K Fidjeland, Georg Ostrovski, et al. Human-level
+control through deep reinforcement learning. nature , 518(7540):529–533, 2015.
+Erich Novak and Henryk Wo ´zniakowski. Tractability of Multivariate Problems: Volume I: Linear
+Information , volume 6 of EMS Tracts in Mathematics . European Mathematical Society, Z ¨urich,
+2008.
+Alexander Novikov, Ng ˆan V ˜u, Marvin Eisenberger, Emilien Dupont, Po-Sen Huang, Adam Zsolt
+Wagner, Sergey Shirobokov, Borislav Kozlovskii, Francisco JR Ruiz, Abbas Mehrabian,
+et al. Alphaevolve: A coding agent for scientific and algorithmic discovery. arXiv preprint
+arXiv:2506.13131 , 2025.
+Ivan Rodkin, Yuri Kuratov, Aydar Bulatov, and Mikhail Burtsev. Associative recurrent memory
+transformer. arXiv preprint arXiv:2407.04841 , 2024.
+John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy
+optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017.
+Ning Shang, Li Lyna Zhang, Siyuan Wang, Gaokai Zhang, Gilsinia Lopez, Fan Yang, Weizhu
+Chen, and Mao Yang. Longrope2: Near-lossless llm context window scaling. arXiv preprint
+arXiv:2502.20082 , 2025.
+Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang,
+Mingchuan Zhang, YK Li, et al. Deepseekmath: Pushing the limits of mathematical reasoning in
+open language models. arXiv preprint arXiv:2402.03300 , 2024.
+Weijia Shi, Sewon Min, Michihiro Yasunaga, Minjoon Seo, Richard James, Mike Lewis, Luke
+Zettlemoyer, and Wen-tau Yih. Replug: Retrieval-augmented black-box language models. In
+Proceedings of the 2024 Conference of the North American Chapter of the Association for Com-
+putational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pp. 8364–8377,
+2024.
+Aditi Singh, Abul Ehtesham, Saket Kumar, and Tala Talaei Khoei. Agentic retrieval-augmented
+generation: A survey on agentic rag, 2025. URL https://arxiv.org/abs/2501.09136 .
+Huatong Song, Jinhao Jiang, Yingqian Min, Jie Chen, Zhipeng Chen, Wayne Xin Zhao, Lei Fang,
+and Ji-Rong Wen. R1-searcher: Incentivizing the search capability in llms via reinforcement
+learning. arXiv preprint arXiv:2503.05592 , 2025.
+Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot, and Ashish Sabharwal. Musique: Multihop
+questions via single-hop question composition. Transactions of the Association for Computational
+Linguistics , 10:539–554, 2022.
+11
+594
+595
+596
+597
+598
+599
+600
+601
+602
+603
+604
+605
+606
+607
+608
+609
+610
+611
+612
+613
+614
+615
+616
+617
+618
+619
+620
+621
+622
+623
+624
+625
+626
+627
+628
+629
+630
+631
+632
+633
+634
+635
+636
+637
+638
+639
+640
+641
+642
+643
+644
+645
+646
+647Under review as a conference paper at ICLR 2026
+Roger Waleffe, Wonmin Byeon, Duncan Riach, Brandon Norick, Vijay Korthikanti, Tri Dao, Albert
+Gu, Ali Hatamizadeh, Sudhakar Singh, Deepak Narayanan, et al. An empirical study of mamba-
+based language models. arXiv preprint arXiv:2406.07887 , 2024.
+Chenghan Yang, Ruiyu Zhao, Yang Liu, and Ling Jiang. Survey of specialized large language model.
+arXiv preprint arXiv:2508.19667 , 2025.
+Diji Yang, Jinmeng Rao, Kezhen Chen, Xiaoyuan Guo, Yawen Zhang, Jie Yang, and Yi Zhang.
+Im-rag: Multi-round retrieval-augmented generation through learning inner monologues. In Pro-
+ceedings of the 47th International ACM SIGIR Conference on Research and Development in In-
+formation Retrieval , pp. 730–740, 2024.
+Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov,
+and Christopher D Manning. Hotpotqa: A dataset for diverse, explainable multi-hop question
+answering. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language
+Processing , pp. 2369–2380, 2018.
+Tan Yu, Anbang Xu, and Rama Akkiraju. In defense of rag in the era of long-context language
+models. arXiv preprint arXiv:2409.01666 , 2024.
+Jiahao Zhang, Haiyang Zhang, Dongmei Zhang, Liu Yong, and Shen Huang. End-to-end beam
+retrieval for multi-hop question answering. In Proceedings of the 2024 Conference of the North
+American Chapter of the Association for Computational Linguistics: Human Language Technolo-
+gies (Volume 1: Long Papers) , pp. 1718–1731, 2024.
+Brian D Ziebart. Modeling purposeful adaptive behavior with the principle of maximum causal
+entropy . Carnegie Mellon University, 2010.
+12
+648
+649
+650
+651
+652
+653
+654
+655
+656
+657
+658
+659
+660
+661
+662
+663
+664
+665
+666
+667
+668
+669
+670
+671
+672
+673
+674
+675
+676
+677
+678
+679
+680
+681
+682
+683
+684
+685
+686
+687
+688
+689
+690
+691
+692
+693
+694
+695
+696
+697
+698
+699
+700
+701Under review as a conference paper at ICLR 2026
+A I NNER PRODUCT APPROXIMATION FOR Q-FUNCTION
+The Universal Approximation Theorem (UAT) states that neural networks with a single hidden layer
+can approximate any continuous function arbitrarily well under mild conditions. In this section, we
+prove a variant of the UAT for functions decomposed as an inner product involving Rotary Position
+Embedding (RoPE). Specifically, we show that any continuous q-function Q(s, ai)defined on a
+compact domain can be approximated by functions of the form:
+F(s, ai) =⟨Es(s), Ea(ai, i)⟩, E a(ai, i) =Rpos(i)Ea(ai), (8)
+where EsandEaare continuous vector functions (e.g., neural networks) and Rtis the RoPE matrix
+of dimension r(even) parameterized by t=pos(i):
+Rt=r/2M
+j=1
+cos(θjt)−sin(θjt)
+sin(θjt) cos( θjt)
+, (9)
+where θjare fixed frequencies. For notational simplicity in the following derivations, we introduce
+the following conventions:
+(x, y) := ( s, a), t:=pos(i), h(x) :=Es(s), g(y) :=Ea(ai).
+For simplicity, we assume the domains of x,yandtare continuous, corresponding to the embed-
+dings of text tokens.
+Theorem 1. LetX⊂Rdx,Y⊂Rdy, and T⊂Rbe compact sets, and define the compact domain
+K=X×Y×T. LetC(K,R)be the space of continuous real-valued functions on Kequipped with
+the uniform norm. Let Rtbe the RoPE matrix of dimension r, defined as a block-diagonal rotation
+matrix (9). Define the function class:
+A={F(x, y, t ) =⟨h(x), Rtg(y)⟩ |h∈C(X,Rr), g∈C(Y,Rr)}. (10)
+ThenAis dense in C(K,R). That is, for any f∈C(K,R)andϵ > 0, there exist continuous
+functions h:X→Rdandg:Y→Rdsuch that:
+sup
+(x,y,t)∈K|f(x, y, t )− ⟨h(x), Rtg(y)⟩|< ϵ. (11)
+Proof. We prove the result via the Stone-Weierstrass theorem, which states that if a subalgebra
+A ⊂ C(K,R)contains the constant functions and separates points, then Ais dense in C(K,R).
+Thus, we show that Asatisfies these requirements.
+Ais a subalgebra. We prove closure under addition, scalar multiplication, and multiplication of
+two arbitrary elements.
+Scalar multiplication: Let F(x, y, t ) =⟨h(x), Rtg(y)⟩ ∈ A andc∈R. Define h′(x) =ch(x).
+Then cF(x, y, t ) =⟨h′(x), Rtg(y)⟩ ∈ A .
+Addition: Let F1(x, y, t ) =⟨h1(x), Rtg1(y)⟩andF2(x, y, t ) =⟨h2(x), Rtg2(y)⟩. Define h(x) =
+[h1(x);h2(x)]∈R2dandg(y) = [g1(y);g2(y)]∈R2d, and let eRtbe a block-diagonal extension of
+Rt. Then
+⟨h(x),eRtg(y)⟩=⟨h1(x), Rtg1(y)⟩+⟨h2(x), Rtg2(y)⟩=F1(x, y, t ) +F2(x, y, t )∈ A.(12)
+Multiplication: Let F1andF2as above. Note that:
+F1(x, y, t )F2(x, y, t ) =⟨h1(x)⊗h2(x),(Rtg1(y))⊗(Rtg2(y))⟩. (13)
+Since (Rtg1(y))⊗(Rtg2(y)) = ( Rt⊗Rt)(g1(y)⊗g2(y)), andRt⊗Rtis a block-diagonal rotation
+matrix with angles θj+θk(a RoPE matrix of dimension d2), define h(x) =h1(x)⊗h2(x)∈Rd2,
+g(y) =g1(y)⊗g2(y)∈Rd2, and let eRtbe the RoPE matrix with frequencies {θj+θk}. Then:
+F1(x, y, t )F2(x, y, t ) =⟨h(x),eRtg(y)⟩ ∈ A . (14)
+Thus,Ais a subalgebra.
+13
+702
+703
+704
+705
+706
+707
+708
+709
+710
+711
+712
+713
+714
+715
+716
+717
+718
+719
+720
+721
+722
+723
+724
+725
+726
+727
+728
+729
+730
+731
+732
+733
+734
+735
+736
+737
+738
+739
+740
+741
+742
+743
+744
+745
+746
+747
+748
+749
+750
+751
+752
+753
+754
+755Under review as a conference paper at ICLR 2026
+Acontains the constant functions. Show the constant function 1is inA. Augment the dimen-
+sion: let d′=d+1, and define h(x) = (1 ,0, . . . , 0)T∈Rd′,g(y) = (1 ,0, . . . , 0)T∈Rd′. Define a
+modified RoPE matrix R′
+tthat acts as the identity on the first coordinate and as Rton the remaining
+dcoordinates. Then
+⟨h(x), R′
+tg(y)⟩= 1. (15)
+Aseparates points. Let(x1, y1, t1)̸= (x2, y2, t2)∈K. Construct F∈ A such that
+F(x1, y1, t1)̸=F(x2, y2, t2).
+Case 1: x1̸=x2ory1̸=y2. Choose g(y) =v(a constant non-zero vector) and let hbe continuous
+withh(x1)̸=h(x2). Then F(x, y, t ) =⟨h(x), Rtv⟩. Since Rtvtraces a circle (for vwith at least
+two non-zero components), for generic v,Rt1vandRt2vare not orthogonal to h(x1)−h(x2), so
+F(x1, y1, t1)̸=F(x2, y2, t2). The case when y1̸=y2is identical to the 1st case.
+Case 2: t1̸=t2. Choose h(x) =wandg(y) =v. Then F(x, y, t ) =⟨w, R tv⟩. Since t7→Rtv
+is injective (for v̸= 0 and non-zero frequencies), Rt1v̸=Rt2v. Choose wnot orthogonal to
+Rt1v−Rt2v, soF(x1, y1, t1)̸=F(x2, y2, t2).
+Thus, by the Stone-Weierstrass theorem, Ais dense in C(K,R).
+Theorem 1 establishes that our architecture is capable of approximating any continuous function
+arbitrarily well. However, it does not specify how complex the network needs to be to achieve a
+given accuracy. The following quantitative result addresses this by providing an explicit convergence
+rate dependent on the smoothness of the target function.
+Lemma 1 (Low-rank approximation of Sobolev kernels) .LetΩx⊂RdxandΩy⊂Rdybe bounded
+Lipschitz domains, and let d=dx+dy.
+Lets > d/ 2and consider a real-valued kernel
+a∈Hs(Ωx×Ωy). (16)
+Then, for every integer r≥1, there exist continuous functions
+h: Ωx→Rr, g : Ωy→Rr(17)
+such that
+sup
+x∈Ωx, y∈Ωya(x, y)− ⟨h(x), g(y)⟩Rr≤C r−s/d∥a∥Hs(Ωx×Ωy). (18)
+Here C > 0depends only on s,dx,dy, and the diameters of Ωx,Ωy.
+Proof. Since s > d/ 2andΩx×Ωyis a bounded Lipschitz domain in Rd, the Sobolev embedding
+theorem implies
+Hs(Ωx×Ωy),→C(Ωx×Ωy) (19)
+continuously. In particular there exists Cemb>0such that
+∥u∥L∞(Ωx×Ωy)≤Cemb∥u∥Hs(Ωx×Ωy)for all u∈Hs(Ωx×Ωy). (20)
+Consider the unit ball
+K:=
+a∈Hs(Ωx×Ωy) :∥a∥Hs(Ωx×Ωy)≤1	
+. (21)
+LetRrdenote the set of all functions on Ωx×Ωyof the formPr
+j=1uj(x)vj(y)with uj∈
+C(Ωx), vj∈C(Ωy).
+Classical results on the Kolmogorov r-widths of Sobolev classes (see, e.g., Novak & Wo ´zniakowski
+(2008)) give
+dr 
+K;L∞(Ωx×Ωy)
+:= inf
+dimV≤rsup
+a∈Kinf
+b∈V∥a−b∥L∞≤C0r−s/d, (22)
+where C0depends only on s, dand the diameters of the domains. Moreover, the infimum can be
+taken over subspaces V⊂ R rconsisting of separable sums; hence the same rate is attainable by
+rank-rapproximations.
+14
+756
+757
+758
+759
+760
+761
+762
+763
+764
+765
+766
+767
+768
+769
+770
+771
+772
+773
+774
+775
+776
+777
+778
+779
+780
+781
+782
+783
+784
+785
+786
+787
+788
+789
+790
+791
+792
+793
+794
+795
+796
+797
+798
+799
+800
+801
+802
+803
+804
+805
+806
+807
+808
+809Under review as a conference paper at ICLR 2026
+Thus for any a∈Hs(Ωx×Ωy)with∥a∥Hs=M, there exist continuous uj, vjsuch that
+sup
+x,ya(x, y)−rX
+j=1uj(x)vj(y)≤C0M r−s/d. (23)
+Setting h(x) = (u1(x), . . . , u r(x))andg(y) = (v1(y), . . . , v r(y))yields the claim.
+Theorem 2 (Approximation by RoPE-type feature maps) .LetX⊂RdxandY⊂Rdybe bounded
+Lipschitz domains, and let T= [0,2π]with endpoints identified.
+Lets >(dx+dy)/2be an integer. Assume that
+f∈C 
+T;Hs(X×Y)
+, ∂ℓ
+tf∈C 
+T;Hs(X×Y)
+,1≤ℓ≤s. (24)
+Define
+M:= max
+0≤ℓ≤s∂ℓ
+tf
+C(T;Hs(X×Y)). (25)
+Then there exist constants C > 0andβ >0, depending on s, dx, dy, the diameters of X, Y , and on
+M, such that for every integer r≥1one can find
+•feature maps h:X→Cr,g:Y→Cr, and
+•a family of unitary matrices {Rt}t∈T⊂Cr×rof the form
+Rt= diag 
+eiω1t, . . . , eiωrt
+, ω j∈Z, (26)
+satisfying
+sup
+(x,y,t)∈X×Y×Tf(x, y, t )− ⟨h(x), Rtg(y)⟩Cr≤C r−β, (27)
+where one may take β=s/(dx+dy+ 1) .
+Proof. Since t7→f(·,·, t)iss-times continuously differentiable as an Hs-valued map, it has a
+Bochner–Fourier expansion
+f(x, y, t ) =X
+k∈Zak(x, y)eikt,∥ak∥Hs≤M(1 +|k|)−s. (28)
+A standard Jackson estimate gives the truncation bound
+sup
+(x,y,t)f−X
+|k|≤Nakeikt≤C1MN−s. (29)
+Letγ:=s/(dx+dy). Apply Lemma 1 separately to real and imaginary parts of each ak(doubling
+the rank) to obtain continuous maps hk:X→Crk,gk:Y→Crkwith
+sup
+x,yak− ⟨hk, gk⟩≤C2M(1 +|k|)−sr−γ
+k, (30)
+where C2depends only on s, dx, dyand the diameters. Define the total dimension r:=P
+|k|≤Nrk,
+and set h:= (hk)|k|≤N,g:= (gk)|k|≤N. Let Rtact block-diagonally as Rt((zk)) := ( eiktzk), so
+that
+⟨h(x), Rtg(y)⟩=X
+|k|≤Neikt⟨hk(x), gk(y)⟩. (31)
+The overall error then satisfies
+sup
+x,y,tf− ⟨h, R tg⟩≤C1MN−s+C2MX
+|k|≤N(1 +|k|)−sr−γ
+k. (32)
+To minimize the second term under the constraintPrk=r, choose
+rk∼(1 +|k|)−s/(γ+1). (33)
+15
+810
+811
+812
+813
+814
+815
+816
+817
+818
+819
+820
+821
+822
+823
+824
+825
+826
+827
+828
+829
+830
+831
+832
+833
+834
+835
+836
+837
+838
+839
+840
+841
+842
+843
+844
+845
+846
+847
+848
+849
+850
+851
+852
+853
+854
+855
+856
+857
+858
+859
+860
+861
+862
+863Under review as a conference paper at ICLR 2026
+Then, since s/(γ+ 1) = dx+dy≥2,
+X
+|k|≤N(1 +|k|)−sr−γ
+k≤C3N−γr−γ. (34)
+Thus
+sup
+x,y,tf− ⟨h, R tg⟩≤C1MN−s+C4MN−γr−γ. (35)
+Choosing N=⌊rγ/(s+γ)⌋balances the two terms and yields
+sup
+x,y,tf− ⟨h, R tg⟩≤CM r−sγ/(s+γ), (36)
+withsγ/(s+γ) =s/(dx+dy+ 1) .
+B E ARLY STOPPING EXPERIMENTS
+In this section, we study a simple early stopping rule for the retrieval agent. Let
+a= (a1, a2, . . . , a T)
+be the full sequence of chunks the agent would select if no stopping threshold were applied, and let
+Gbe a set of ground-truth chunks for the current question.
+For each step t, the agent outputs a Q-value Qtfor taking the next retrieval action. Given a fixed
+Q-value threshold Qthreshold , we simulate an early-stopping policy that keeps taking actions while
+Qt≥Qthreshold and terminates as soon as Qt< Q threshold . We denote by tstopthe number of actions
+actually taken under this policy, i.e. the number of selected chunks:
+tstop=number of steps until the first twithQt< Q threshold .
+Independently of the stopping rule, we define tearliest as the earliest step at which all ground-truth
+chunks have already been collected:
+tearliest = min
+t:{a1, . . . , a t} ⊇G	
+.
+If the agent never collects all ground-truth chunks, i.e. such a tdoes not exist, we discard this episode
+from the analysis below.
+For comparison, we also consider an oracle stopping policy that is allowed to look at the ground
+truth: it knows tearliest for each episode and simply stops at this step. By construction, this oracle
+policy never stops too early or too late.
+Depending on the relation between tstopandtearliest we distinguish three outcomes.
+Early stop (“early”). Iftstop< t earliest , the stopping rule terminates before all ground-truth chunks
+have been selected. In this case the error is due to stopping too early and missing potentially useful
+chunks.
+Perfect stop (“perfect”). Iftstop=tearliest , the stopping rule terminates exactly at the first step
+when the set of selected chunks already contains all ground-truth chunks. In this case, the stopping
+behavior is optimal with respect to our definition.
+Late stop (“late”). Iftstop> t earliest , then at some earlier step the agent had already collected all
+ground-truth chunks but continued to retrieve additional chunks. This corresponds to stopping too
+late and taking unnecessary steps.
+Figure 4 (top row, panel (a)) shows how the proportions of early and late errors change as a function
+of the Q-value threshold Qthreshold on HotPotQA. For small thresholds, the agent almost never stops
+too early but may continue to retrieve redundant chunks, which leads to late errors. As the threshold
+increases, late errors decrease, but the probability of stopping too early grows.
+16
+864
+865
+866
+867
+868
+869
+870
+871
+872
+873
+874
+875
+876
+877
+878
+879
+880
+881
+882
+883
+884
+885
+886
+887
+888
+889
+890
+891
+892
+893
+894
+895
+896
+897
+898
+899
+900
+901
+902
+903
+904
+905
+906
+907
+908
+909
+910
+911
+912
+913
+914
+915
+916
+917Under review as a conference paper at ICLR 2026
+(a)
+ (b)
+ (c)
+(d)
+ (e)
+ (f)
+Figure 4: Early stopping analysis on HotPotQA (top row) and BabiLong QA2 (bottom row). Panels
+(a,d) show the proportions of early and late errors as a function of the Q-value threshold Qthreshold .
+Panels (b,e) show the proportion of perfect stops. Panels (c,f) show the average number of selected
+chunks (episode length).
+Table 4: HotPotQA early stopping experiments
+Q-value threshold stopped early stopped later perfect stop TPR FPR Episode len Fact EM Fact F1 Ans EM Ans F1
+-0.1 0 0.979 0.021 0.983 0.380 4.99 0.968 0.563 0.588 0.759
+0.0 0.015 0.395 0.590 0.976 0.110 2.82 0.954 0.843 0.592 0.761
+0.1 0.061 0.060 0.879 0.952 0.041 2.23 0.910 0.915 0.593 0.756
+0.2 0.088 0.020 0.892 0.937 0.032 2.13 0.883 0.917 0.587 0.752
+0.3 0.104 0.006 0.890 0.927 0.029 2.08 0.868 0.915 0.585 0.747
+0.4 0.118 0.002 0.880 0.919 0.027 2.05 0.854 0.911 0.575 0.737
+0.5 0.132 0 0.867 0.910 0.025 2.02 0.840 0.907 0.571 0.734
+0.6 0.144 0 0.856 0.903 0.024 2.00 0.829 0.902 0.570 0.730
+0.7 0.157 0 0.843 0.891 0.023 1.96 0.817 0.895 0.564 0.724
+0.8 0.202 0 0.798 0.840 0.017 1.82 0.773 0.847 0.546 0.702
+0.9 0.417 0 0.583 0.611 0.006 1.27 0.565 0.620 0.444 0.588
+1.0 0.910 0 0.090 0.105 0.000 0.21 0.088 0.111 0.266 0.385
+1.1 1.000 0 0 0 0 0 0 0 – –
+Panel (b) of Figure 4 reports the proportion of “perfect” stopping events, peaking around thresholds
+Qthreshold ≈0.1–0.3. Panel (c) shows the average number of selected chunks (episode length) under
+the same policy. Larger thresholds lead to shorter episodes, but once the threshold becomes too high,
+the early-stop error rate rapidly increases and performance degrades.
+Table4 summarises these trade-offs quantitatively on HotPotQA for the GTE embedder with
+penalize extra steps=True andnever terminate=True . We report the fraction of
+early, late and perfect stops, the average episode length, and the final Fact EM and Fact F1 scores,
+as well as the corresponding true positive rate (TPR) and false positive rate (FPR) for the stopping
+rule viewed as a binary classifier. The best Fact F1 is achieved at Qthreshold = 0.2, confirming that
+moderate thresholds provide a good balance between taking enough retrieval steps and avoiding
+unnecessary ones.
+Using the TPR and FPR columns of Tables 4 and 5, we can plot the receiver operating characteristic
+(ROC) curves of the early-stopping rule, shown in Figure 5. Panel (a) corresponds to HotPotQA and
+panel (b) to BabiLong QA2. Each point on the curves corresponds to a particular Q-value threshold
+Qthreshold . The red star in each panel marks the oracle stopping policy introduced above, which knows
+tearliest and stops exactly at that step; this point serves as an upper bound on the achievable trade-off
+17
+918
+919
+920
+921
+922
+923
+924
+925
+926
+927
+928
+929
+930
+931
+932
+933
+934
+935
+936
+937
+938
+939
+940
+941
+942
+943
+944
+945
+946
+947
+948
+949
+950
+951
+952
+953
+954
+955
+956
+957
+958
+959
+960
+961
+962
+963
+964
+965
+966
+967
+968
+969
+970
+971Under review as a conference paper at ICLR 2026
+(a) HotPotQA
+0.0 0.2 0.4 0.6 0.8 1.0
+False Positive Rate0.00.20.40.60.81.0True Positive RateROC Curve
+ROC curve (area = 0.970)
+Oracle Point (b) BabiLong QA2
+Figure 5: ROC curves for the early-stopping rule. Panel (a) shows HotPotQA; panel (b) shows Ba-
+biLong QA2. The dashed line indicates random performance. Each point corresponds to a different
+Q-value threshold Qthreshold . The red star denotes the oracle stopping policy that always stops at
+tearliest , i.e. exactly when the last ground-truth chunk has been retrieved.
+Table 5: BabiLong QA2 early stopping experiments.
+Q-value threshold stopped early stopped later perfect stop Episode len Fact EM Fact F1 Ans EM Ans F1
+-0.10 0.000 0.994 0.006 6.00 0.996 0.499 0.884 0.884
+0.00 0.000 0.994 0.006 6.00 0.996 0.499 0.884 0.884
+0.10 0.000 0.498 0.502 2.86 0.996 0.845 0.944 0.944
+0.20 0.000 0.036 0.964 2.29 0.996 0.949 0.976 0.976
+0.30 0.006 0.010 0.984 2.25 0.990 0.952 0.970 0.970
+0.40 0.008 0.002 0.990 2.24 0.988 0.953 0.970 0.970
+0.50 0.008 0.000 0.992 2.23 0.988 0.954 0.972 0.972
+0.60 0.016 0.000 0.984 2.21 0.980 0.948 0.968 0.968
+0.70 0.042 0.000 0.958 2.16 0.954 0.934 0.948 0.948
+0.80 0.112 0.000 0.888 2.06 0.884 0.905 0.884 0.884
+0.90 0.177 0.000 0.823 1.92 0.820 0.861 0.830 0.830
+1.00 0.930 0.000 0.070 0.22 0.070 0.107 0.230 0.230
+1.10 1.000 0.000 0.000 0.00 0.000 0.000 0.000 0.000
+between TPR and FPR. On HotPotQA the area under the curve (AUC) is 0.96, and BabiLong QA2
+-0.97.
+Figure 4 (bottom row) and Table 5 report the same analysis on BabiLong QA2. Qualitatively, the
+behaviour of the stopping rule is similar to HotPotQA: higher thresholds lead to shorter episodes
+and more early stops, while lower thresholds reduce early-stop errors at the cost of more late stops
+and longer episodes.
+However, the transition between these regimes is much sharper on BabiLong QA2. For thresholds in
+the range Qthreshold ∈[0.2,0.6]the fraction of perfect stops remains very high ( ≈0.95–0.99), while
+the average episode length is reduced from about 6to roughly 2.2retrieval steps. In this region Fact
+EM and Fact F1 stay close to their maximum values (Fact F1 around 0.95), and answer accuracy
+(Ans EM/F1) is also near-optimal. Only when the threshold approaches 1.0, performance collapses,
+as the agent stops almost immediately and misses relevant chunks.
+C S ENSITIVITY TO RETRIEVAL BUDGET
+We investigate the dependence of final model performance on the number of Q-RAG retrievals
+(i.e., the retrieval budget). For this analysis, we used a Q-RAG system with an Alibaba-NLP/gte-
+multilingual-base embedder, trained on a combination of the HotpotQA and Musique datasets. This
+18
+972
+973
+974
+975
+976
+977
+978
+979
+980
+981
+982
+983
+984
+985
+986
+987
+988
+989
+990
+991
+992
+993
+994
+995
+996
+997
+998
+999
+1000
+1001
+1002
+1003
+1004
+1005
+1006
+1007
+1008
+1009
+1010
+1011
+1012
+1013
+1014
+1015
+1016
+1017
+1018
+1019
+1020
+1021
+1022
+1023
+1024
+1025Under review as a conference paper at ICLR 2026
+Table 6: Sensitivity to the number of retrieves. Dataset: HotpotQA (1000 samples). Embedder
+Alibaba-NLP/gte-multilingual-base was trained on Hotpotqa+Musique.
+RetrievalsFacts Qwen3-4B Qwen3-14B Qwen3-32B
+EM F1 EM F1 EM F1 EM F1
+2 0.832 0.903 0.439 0.620 0.556 0.708 0.504 0.675
+3 0.935 0.771 0.481 0.657 0.570 0.730 0.510 0.692
+4 0.962 0.652 0.493 0.664 0.577 0.734 0.513 0.695
+5 0.978 0.565 0.481 0.656 0.584 0.744 0.512 0.692
+embedder supports contexts of up to 8192 tokens, enabling the use of a larger retrieval budget. We
+evaluated the system on 1000 samples from the HotpotQA dataset. The final generation of the
+answers was performed by three LLMs: Qwen3-4B, Qwen3-14B, and Qwen3-32B.
+The results are presented in Table6. Here, EM (Exact Match) indicates the number of correct
+(ground-truth supporting) chunks retrieved, while F1 accounts for the inclusion of noise (non-
+supporting) chunks. The table shows that increasing the number of retrieves from 2 to 3 improves
+both the number of correct facts retrieved and the answer quality across all three LLMs. These
+experiments suggest that, within a reasonable range of retrieval counts, final answer accuracy is pri-
+marily dependent on the retrieval of correct chunks and is not degraded by the presence of noise
+chunks.
+D P LANNING FOR MULTI -STEPRETRIEVAL
+Wecanapply planning at the multi-step retrieval stage, formulating source selection as a search over
+the space of action trajectories; see § 4.4 for an application. In the spirit of Beam-Retriever , we can
+run beam search where candidates are ranked by the learned action-value Qθ(s, a). However, our
+planning is computationally cheaper because Qθis computed as a dot product of state and action
+embeddings, Qθ(s, a) =⟨Es(s), Ea(a)⟩,so no new transformer forward passes are required for
+each candidate chunk, whereas Beam-Retriever relies on a transformer reranker over trajectories,
+incurring fresh forward passes at every expansion. Details of the embedding-based scoring are
+provided in § 3.2. At inference, we perform beam search over Qanddeterministically expand the
+top-kactions by Qθ.
+E M ETHOD COMPLEXITY AND EFFICIENCY
+Q-RAG produces a final answer using two main components. The first is a multi-step retrieval agent
+that performs iterative search over the full document to collect all context-relevant evidence (see
+sec. 3.2). The second is an LLM Answerer that conditions on the retrieved chunks and generates
+the final response. Importantly, only the retrieval agent interacts with the original long context; the
+effective context length seen by the LLM Answerer depends solely on the retrieval hyperparameters
+(e.g., number of retrieval steps T, maximum chunk length). Consequently, the time and memory
+complexity of the LLM Answerer with respect to the original context length Nare both O(1).
+Retrieval agent consists of two embedders: state embedder Esand action embedder Ea(see sec.
+3.2).
+Chunks embedding. The action embedder computes embeddings for chunks of the original doc-
+ument. If the document has length Nand the chunk size is nc, embedding the entire document
+takesO
+N
+nctact
+, where tactis the embedding time per chunk (treated as a constant). The action
+embedder performs a single pass over all chunks per retrieval episode; thus its complexity is linear
+inN, i.e.,O(N).
+State Embedding. The state embedder processes the state Ktimes per episode (once per search
+step). From the construction of the state (see fig. 1), the total cost over an episode is O(K tstate),
+where state embedding time tstate depends on ncandK, but not on N. Hence, the state embedder
+isO(1)with respect to document length N.
+19
+1026
+1027
+1028
+1029
+1030
+1031
+1032
+1033
+1034
+1035
+1036
+1037
+1038
+1039
+1040
+1041
+1042
+1043
+1044
+1045
+1046
+1047
+1048
+1049
+1050
+1051
+1052
+1053
+1054
+1055
+1056
+1057
+1058
+1059
+1060
+1061
+1062
+1063
+1064
+1065
+1066
+1067
+1068
+1069
+1070
+1071
+1072
+1073
+1074
+1075
+1076
+1077
+1078
+1079Under review as a conference paper at ICLR 2026
+Search Policy. To select the next chunk at each step, we compute the inner product between the cur-
+rent state embedding and all action embeddings. With naive implementation, selecting all Kactions
+over the episode requires O
+K dembN
+nc
+=O(N), where dembis size of embedding vectors. This
+can be reduced using approximate kNN methods that achieve sub-linear query time in practice ( ??).
+Overall time complexity. Summing the terms above yields
+ON
+nctact+K tstate +K dembN
+nc
+=O(N),
+since K,tact,tstate, and dembdo not depend on N.
+Space complexity. The main part that direcly depends on document length is the nubmer of chunk
+embeddings we need to store: O
+dembN
+nc
+=O(N). In practice, embeddings are lightweight;
+GPU memory is mainly consumed by the LLM weights and the action embedder forward passes. By
+capping the action embedder’s batch size (parameter chunk batch ), the growth of peak memory
+withNbecomes negligible.
+Training Time Efficiency. A critical practical advantage of the Q-RAG framework is its efficient
+and rapid training convergence, as demonstrated in Figure 6. The learning curves depict the model’s
+performance evolution on two distinct and challenging benchmarks: BabiLong QA3 and HotPotQA.
+The curves show a sharp initial rise in evaluation metric scores, followed by a stable plateau, indi-
+cating that the model quickly learns the core retrieval-augmented generation task. Notably, this
+convergence is achieved within approximately 12 hours of training time on a GPU setup.
+0 1 2 3 4
+Time (hours)0.30.40.50.60.70.80.91.0Eval return
+Babilong QA2
+0 1 2 3 4 5 6
+Time (hours)0.20.30.40.50.60.70.80.91.0Eval return
+HotPotQA2
+Figure 6: Learning curves for HotPotQA and BabiLong QA3 runs. Both graphs the average episodic
+return with respect to training time.
+F E XTRA QA RESULTS
+Table 7 compares multi-step retrieval methods on HotPotQA-distractors, Musique (in-distribution),
+and Musique (out-of-distribution). It reports both fact-retrieval (Fact F1, Fact EM) and
+answer-generation (Ans F1, Ans EM) scores. Q-RAG and its planned variant (Plan Q-RAG) achieve
+strong overall results, especially on out-of-distribution data, while Beam-Retriever leads on Hot-
+PotQA but generalizes less robustly. Methods with missing entries did not report results for the
+corresponding dataset or metric.
+G T RAINING DETAILS
+We trained the model with AdamW (learning rate 1.5×10−5,β1=0.9,β2=0.98,ϵ=10−6, weight
+decay 5×10−4). The learning rate followed a linear schedule: we used a warm-up of 1,000steps,
+then linearly decayed the rate to 10% of its initial value over the remaining training steps. We applied
+20
+1080
+1081
+1082
+1083
+1084
+1085
+1086
+1087
+1088
+1089
+1090
+1091
+1092
+1093
+1094
+1095
+1096
+1097
+1098
+1099
+1100
+1101
+1102
+1103
+1104
+1105
+1106
+1107
+1108
+1109
+1110
+1111
+1112
+1113
+1114
+1115
+1116
+1117
+1118
+1119
+1120
+1121
+1122
+1123
+1124
+1125
+1126
+1127
+1128
+1129
+1130
+1131
+1132
+1133Under review as a conference paper at ICLR 2026
+Table 7: Comparison of methods on HotPotQA-distractors, Musique (in-distribution), and Musique
+(OOD). Bold text and underline denote the best and second best scores respectively.
+HotPotQA Musique Musique (OOD) Average
+Methods Fact F1 Fact EM Ans F1 Ans EM Fact F1 Fact EM Ans F1 Ans EM Fact F1 Fact EM Ans F1 Ans EM Ans F1 Ans EM
+Plan Q-RAG + QwQ-32B 0.95 0.91 0.76 0.60 0.84 0.76 0.60 0.44 0.69 0.53 0.51 0.36 0.62 0.46
+Q-RAG+QwQ-32B 0.93 0.89 0.76 0.59 0.81 0.72 0.59 0.43 0.71 0.55 0.52 0.37 0.62 0.46
+Beam-Retriever+QwQ-32B 0.97 0.94 0.77 0.61 0.86 0.69 0.59 0.43 0.61 0.36 0.40 0.27 0.59 0.44
+Search-r1 0.81 0.66 0.65 0.52 – – – – 0.71 0.55 0.51 0.39 – –
+Search-o1 – – – – – – – – – – – – – –
+GraphReader – – – – – – – – – – – – – –
+HippoRAG – – – – – – – – – – – – – –
+gradient clipping with a maximum ℓ2norm of 2.0and used gradient accumulation for 8steps. The
+base mini-batch size was 12; with accumulation this yields an effective batch size of 12×8 = 96
+per update (scaled by the number of devices if using distributed training).
+In the objective and algorithmic components we set γ=0.99,α=0.05,λ=0.5, and τ=0.02. Action
+representations were capped at a maximum length of 220tokens.
+The end-to-end training of a single model did not exceed 12 hours on a single A100-80GB GPU.
+Models per benchmark. For open-domain QA benchmarks ( HotPotQA ,Musique ), we
+trained an multilingual-e5-large encoder. For Ruler and BabiLong , we trained
+facebook/contriever .
+H E VALUATION DETAILS
+LLM Models for generation. To compute answer-level metrics (Ans EM and Ans F1), we con-
+dition the QwQ-32B model on the question and the retrieved text chunks. All answer-generation
+results reported for Q-RAG and Plan Q-RAG on the HotPotQA and Musique benchmarks were ob-
+tained under consistent generation settings: decoding with temperature 0.0and a maximum output
+length of maxtokens = 8000 . For the BabiLong and RULER experiments, we instead used
+Qwen-4B with maxtokens = 512 and reasoning disabled ( enable thinking =False ).
+Retrieval configuration. For Q-RAG we limit the number of retrieval steps to T= 2 on Hot-
+PotQA, RULER and Babilong we use T= 4. The same step limits are used when evaluating
+Search-R1 and Beam Retriever.
+We split documents into fixed-length, non-overlapping chunks, aiming not to break sentences across
+chunk boundaries. The chunk length is primarily determined by the context window of the embed-
+ders used in our main experiments (512 tokens) and the number of retrieval steps. For Needle-in-a-
+Haystack and BabiLong we use a chunk length of 64 tokens. For open-domain QA tasks we set the
+chunk length as a function of the number of retrieval steps i.e. for HotPotQA we segment the corpus
+into chunks of at most 220 tokens ( T= 2); for Musique we use action chunks of at most 110 tokens
+(T= 4). In additional experiments with a ‘Alibaba-NLP/gte-multilingual-base‘ (8k context length)
+we use a chunk length of 256 tokens.
+heightDataset Setting Chunk size T Backbone retriever Answering LLM
+HotPotQA Q-RAG / Plan Q-RAG 220 2 multilingual-e5-large QwQ-32B
+HotPotQA Q-RAG (early stopping) 256 5 Alibaba-NLP/gte-multilingual-base QwQ-32B
+Musique Q-RAG / Plan Q-RAG 110 4 multilingual-e5-large QwQ-32B
+Babilong Q-RAG 64 4 facebook/contriever Qwen3-4B
+RULER Q-RAG 64 4 facebook/contriever Qwen3-4B
+Table 8: Retrieval and generation configuration for each dataset. Chunk size is in tokens; Tis the
+maximum number of retrieval steps.
+21
+1134
+1135
+1136
+1137
+1138
+1139
+1140
+1141
+1142
+1143
+1144
+1145
+1146
+1147
+1148
+1149
+1150
+1151
+1152
+1153
+1154
+1155
+1156
+1157
+1158
+1159
+1160
+1161
+1162
+1163
+1164
+1165
+1166
+1167
+1168
+1169
+1170
+1171
+1172
+1173
+1174
+1175
+1176
+1177
+1178
+1179
+1180
+1181
+1182
+1183
+1184
+1185
+1186
+1187Under review as a conference paper at ICLR 2026
+Fact-level metrics. LetSgtbe the set of ground-truth supporting facts and Spredbe the set of
+predicted supporting facts returned by the retriever. Our Fact EM metric is defined as
+Fact -EM =(1,ifSgt⊆Spred,
+0,otherwise.
+Equivalently, in code: em = 1.0 if gt sf.issubset(pred sf) else 0.0 . Thus
+Fact EM gives full credit whenever the prediction covers all ground-truth facts, even if it also con-
+tains additional, irrelevant chunks; it does not require the predicted and ground-truth sets to be
+exactly equal.
+22
